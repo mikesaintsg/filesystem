@@ -74,21 +74,21 @@ export interface FileInterface {
 
 ### Implementation Checklist
 
-- [ ] Create `src/core/file/File.ts`
-- [ ] Implement constructor accepting `FileSystemFileHandle`
-- [ ] Implement `getName()` — returns handle name
-- [ ] Implement `getMetadata()` — returns file stats
-- [ ] Implement `getText()` — reads as text
-- [ ] Implement `getArrayBuffer()` — reads as binary
-- [ ] Implement `getBlob()` — returns Blob
-- [ ] Implement `getStream()` — returns readable stream
-- [ ] Implement `write()` — atomic write operation
-- [ ] Implement `append()` — append to file
-- [ ] Implement `truncate()` — resize file
-- [ ] Implement `openWritable()` — returns WritableFileInterface
-- [ ] Implement permission methods
-- [ ] Implement `isSameEntry()`
-- [ ] Add to barrel export
+- [x] Create `src/core/file/File.ts`
+- [x] Implement constructor accepting `FileSystemFileHandle`
+- [x] Implement `getName()` — returns handle name
+- [x] Implement `getMetadata()` — returns file stats
+- [x] Implement `getText()` — reads as text
+- [x] Implement `getArrayBuffer()` — reads as binary
+- [x] Implement `getBlob()` — returns Blob
+- [x] Implement `getStream()` — returns readable stream
+- [x] Implement `write()` — atomic write operation
+- [x] Implement `append()` — append to file
+- [x] Implement `truncate()` — resize file
+- [x] Implement `openWritable()` — returns WritableFileInterface
+- [x] Implement permission methods
+- [x] Implement `isSameEntry()`
+- [x] Add to barrel export
 
 ### Acceptance Criteria
 
@@ -129,8 +129,8 @@ describe('File', () => {
 
 All of the following must be true:
 
-- [ ] All deliverables marked ✅ Done
-- [ ] `npm run check` passes
-- [ ] `npm run test` passes with >80% coverage on new code
-- [ ] No `it.todo()` remaining in phase scope
-- [ ] PLAN.md updated to show Phase 2 complete
+- [x] All deliverables marked ✅ Done
+- [x] `npm run check` passes
+- [x] `npm run test` passes with >80% coverage on new code
+- [x] No `it.todo()` remaining in phase scope
+- [x] PLAN.md updated to show Phase 2 complete

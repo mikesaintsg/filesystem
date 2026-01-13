@@ -66,19 +66,19 @@ export interface FileSystemInterface {
 
 ### Implementation Checklist
 
-- [ ] Create `src/core/filesystem/FileSystem.ts`
-- [ ] Implement `getRoot()` — returns OPFS root directory
-- [ ] Implement `getQuota()` — returns storage quota info
-- [ ] Implement `isUserAccessSupported()` — feature detection
-- [ ] Implement `showOpenFilePicker()` — opens file picker dialog
-- [ ] Implement `showSaveFilePicker()` — opens save dialog
-- [ ] Implement `showDirectoryPicker()` — opens directory picker
-- [ ] Implement `fromDataTransferItem()` — converts single drag-drop item
-- [ ] Implement `fromDataTransferItems()` — converts multiple items
-- [ ] Implement `fromFile()` — wraps File API object
-- [ ] Implement `fromFiles()` — wraps FileList
-- [ ] Create `createFileSystem()` factory function
-- [ ] Add to barrel export
+- [x] Create `src/core/filesystem/FileSystem.ts`
+- [x] Implement `getRoot()` — returns OPFS root directory
+- [x] Implement `getQuota()` — returns storage quota info
+- [x] Implement `isUserAccessSupported()` — feature detection
+- [x] Implement `showOpenFilePicker()` — opens file picker dialog
+- [x] Implement `showSaveFilePicker()` — opens save dialog
+- [x] Implement `showDirectoryPicker()` — opens directory picker
+- [x] Implement `fromDataTransferItem()` — converts single drag-drop item
+- [x] Implement `fromDataTransferItems()` — converts multiple items
+- [x] Implement `fromFile()` — wraps File API object
+- [x] Implement `fromFiles()` — wraps FileList
+- [x] Create `createFileSystem()` factory function
+- [x] Add to barrel export
 
 ### Acceptance Criteria
 
@@ -124,8 +124,8 @@ describe('FileSystem', () => {
 
 All of the following must be true:
 
-- [ ] All deliverables marked ✅ Done
-- [ ] `npm run check` passes
-- [ ] `npm run test` passes with >80% coverage on new code
-- [ ] No `it.todo()` remaining in phase scope
-- [ ] PLAN.md updated to show Phase 3 complete
+- [x] All deliverables marked ✅ Done
+- [x] `npm run check` passes
+- [x] `npm run test` passes with >80% coverage on new code
+- [x] No `it.todo()` remaining in phase scope
+- [x] PLAN.md updated to show Phase 3 complete
