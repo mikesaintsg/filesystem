@@ -17,6 +17,7 @@ import { File } from './core/file/File.js'
 import { Directory } from './core/directory/Directory.js'
 import { WritableFile } from './core/file/WritableFile.js'
 import { SyncAccessHandle } from './core/file/SyncAccessHandle.js'
+import { FileSystem } from './core/filesystem/FileSystem.js'
 
 /**
  * Creates a file system interface.
@@ -37,8 +38,7 @@ export function createFileSystem(): Promise<FileSystemInterface> {
 		return Promise.reject(new NotSupportedError('Origin Private File System is not supported in this browser'))
 	}
 
-	// TODO: Implement FileSystem class in Phase 3
-	return Promise.reject(new NotSupportedError('FileSystem implementation pending - Phase 3'))
+	return Promise.resolve(new FileSystem())
 }
 
 /**

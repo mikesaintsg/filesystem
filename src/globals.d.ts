@@ -41,25 +41,25 @@ declare global {
 	}
 
 	interface OpenFilePickerOptions {
-		multiple?: boolean
-		excludeAcceptAllOption?: boolean
-		types?: FilePickerAcceptType[]
-		id?: string
-		startIn?: StartInDirectory
+		multiple?: boolean | undefined
+		excludeAcceptAllOption?: boolean | undefined
+		types?: FilePickerAcceptType[] | undefined
+		id?: string | undefined
+		startIn?: StartInDirectory | undefined
 	}
 
 	interface SaveFilePickerOptions {
-		suggestedName?: string
-		excludeAcceptAllOption?: boolean
-		types?: FilePickerAcceptType[]
-		id?: string
-		startIn?: StartInDirectory
+		suggestedName?: string | undefined
+		excludeAcceptAllOption?: boolean | undefined
+		types?: FilePickerAcceptType[] | undefined
+		id?: string | undefined
+		startIn?: StartInDirectory | undefined
 	}
 
 	interface DirectoryPickerOptions {
-		id?: string
-		startIn?: StartInDirectory
-		mode?: 'read' | 'readwrite'
+		id?: string | undefined
+		startIn?: StartInDirectory | undefined
+		mode?: 'read' | 'readwrite' | undefined
 	}
 
 	interface FilePickerAcceptType {
