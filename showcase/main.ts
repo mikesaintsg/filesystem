@@ -1100,14 +1100,49 @@ function isWebViewBug(): boolean {
 	return matchesBugPattern || (matchesBugPattern && isAndroid)
 }
 
+function isFileProtocol(): boolean {
+	return window.location.protocol === 'file:'
+}
+
+function isSecureContext(): boolean {
+	return window.isSecureContext ?? false
+}
+
 function createOpfsUnavailableMessage(): string {
 	const isKnownBug = isWebViewBug()
+	const isFile = isFileProtocol()
+	const isSecure = isSecureContext()
+
+	// Priority notice for file:// protocol - most common cause on desktop
+	const fileProtocolNotice = isFile ? `
+		<div class="unavailable-bug-notice" style="border-color: #e74c3c; background: #fdf0ed;">
+			<h5>📁 Opening from Local File System</h5>
+			<p>You're opening this file directly from your file system (<code>file://</code> protocol).</p>
+			<p><strong>OPFS requires a web server</strong> - it cannot work when opening HTML files directly.</p>
+			<p><strong>Solutions:</strong></p>
+			<ul>
+				<li>🌐 <strong>Use a local server:</strong> Run <code>npx serve .</code> or <code>python -m http.server</code></li>
+				<li>💻 <strong>Use the dev server:</strong> Run <code>npm run dev</code> in the project directory</li>
+				<li>☁️ <strong>Deploy to a web host:</strong> GitHub Pages, Netlify, Vercel, etc.</li>
+			</ul>
+		</div>
+	` : ''
+
+	// Secure context notice (for http:// without localhost)
+	const secureContextNotice = (!isSecure && !isFile) ? `
+		<div class="unavailable-bug-notice" style="border-color: #f39c12; background: #fef9e7;">
+			<h5>🔓 Non-Secure Context</h5>
+			<p>OPFS requires a <strong>secure context</strong> (HTTPS or localhost).</p>
+			<p>You're currently on: <code>${window.location.origin}</code></p>
+			<p><strong>Solution:</strong> Access via HTTPS or localhost.</p>
+		</div>
+	` : ''
 
 	const bugNotice = isKnownBug ? `
 		<div class="unavailable-bug-notice">
-			<h5>🐛 Known Android WebView Bug Detected</h5>
-			<p>This error appears to be caused by a <strong>known bug in Android WebView version 132</strong> (affects Chrome/Edge on Android 14/15).</p>
-			<p><strong>This is NOT a limitation of your browser or this library</strong> - it's a temporary bug that Google has acknowledged and is fixing.</p>
+			<h5>🐛 Known Browser Bug Detected</h5>
+			<p>This error appears to be caused by a <strong>known bug in Android WebView/Chromium</strong>.</p>
+			<p><strong>This is NOT a limitation of your browser or this library</strong> - it's a temporary bug.</p>
 			<p><strong>Workarounds:</strong></p>
 			<ul>
 				<li>📲 Update your browser/WebView to the latest version</li>
@@ -1122,12 +1157,16 @@ function createOpfsUnavailableMessage(): string {
 			<h4>⚠️ OPFS Not Available</h4>
 			<p class="demo-desc">Origin Private File System is not accessible in your current browser context.</p>
 
+			${fileProtocolNotice}
+			${secureContextNotice}
 			${bugNotice}
 
 			<div class="unavailable-reasons">
 				<h5>Possible reasons:</h5>
 				<ul>
-					${isKnownBug ? '<li>🐛 <strong>Android WebView 132 bug</strong> - Known issue, fix is rolling out</li>' : ''}
+					${isFile ? '<li>📁 <strong>file:// protocol</strong> - OPFS requires a web server</li>' : ''}
+					${!isSecure && !isFile ? '<li>🔓 <strong>Non-secure context</strong> - OPFS requires HTTPS or localhost</li>' : ''}
+					${isKnownBug ? '<li>🐛 <strong>Browser bug</strong> - Known issue, fix is rolling out</li>' : ''}
 					<li>🔒 <strong>Private/Incognito browsing mode</strong> - OPFS is often disabled</li>
 					<li>📱 <strong>Safari iOS limitations</strong> - Safari has partial OPFS support</li>
 					<li>🌐 <strong>Cross-origin iframe</strong> - OPFS requires same-origin context</li>
@@ -1138,11 +1177,17 @@ function createOpfsUnavailableMessage(): string {
 			<div class="unavailable-error">
 				<h5>Error details:</h5>
 				<code>${opfsError ?? 'Unknown error'}</code>
+				<div style="margin-top: 8px; font-size: 12px; color: #666;">
+					<strong>Protocol:</strong> ${window.location.protocol} |
+					<strong>Secure Context:</strong> ${isSecure ? 'Yes' : 'No'} |
+					<strong>Origin:</strong> ${window.location.origin}
+				</div>
 			</div>
 
 			<div class="unavailable-alternatives">
 				<h5>Try these alternatives:</h5>
 				<ul>
+					${isFile ? '<li>🌐 <strong>Run a local server</strong> - Use <code>npm run dev</code> or <code>npx serve .</code></li>' : ''}
 					<li>✅ Use the <strong>Drag & Drop</strong> tab - works everywhere!</li>
 					<li>✅ Use the <strong>Error Handling</strong> tab - demonstrates API usage</li>
 					<li>✅ Open in <strong>Chrome, Edge, or Opera</strong> on desktop in normal browsing mode</li>
