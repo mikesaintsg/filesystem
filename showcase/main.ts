@@ -1074,15 +1074,60 @@ function demonstrateErrorCodes(): ExampleResult {
 // Interactive Demos
 // ============================================================================
 
+// Error patterns for detecting the Android WebView 132 bug
+const WEBVIEW_BUG_PATTERNS = [
+	'unsafe for access',
+	'too many calls',
+	'certain files are unsafe',
+] as const
+
+function isWebViewBug(): boolean {
+	// Detect Android WebView 132 bug specifically
+	// This bug manifests as NotAllowedError with specific message patterns
+	if (!opfsError) return false
+
+	const errorMsg = opfsError.toLowerCase()
+
+	// Check for known WebView bug message patterns
+	const matchesBugPattern = WEBVIEW_BUG_PATTERNS.some(pattern => errorMsg.includes(pattern))
+	if (!matchesBugPattern) return false
+
+	// Additional heuristic: check if on Android (user agent)
+	const isAndroid = /android/i.test(navigator.userAgent)
+
+	// Return true if patterns match (regardless of platform, as error messages are specific enough)
+	// but give higher confidence if on Android
+	return matchesBugPattern || (matchesBugPattern && isAndroid)
+}
+
 function createOpfsUnavailableMessage(): string {
+	const isKnownBug = isWebViewBug()
+
+	const bugNotice = isKnownBug ? `
+		<div class="unavailable-bug-notice">
+			<h5>🐛 Known Android WebView Bug Detected</h5>
+			<p>This error appears to be caused by a <strong>known bug in Android WebView version 132</strong> (affects Chrome/Edge on Android 14/15).</p>
+			<p><strong>This is NOT a limitation of your browser or this library</strong> - it's a temporary bug that Google has acknowledged and is fixing.</p>
+			<p><strong>Workarounds:</strong></p>
+			<ul>
+				<li>📲 Update your browser/WebView to the latest version</li>
+				<li>💻 Try on a desktop browser for full functionality</li>
+				<li>🔄 Use IndexedDB as a fallback (see our <a href="https://github.com/mikesaintsg/filesystem/blob/main/guides/polyfill.md" target="_blank">Polyfill Guide</a>)</li>
+			</ul>
+		</div>
+	` : ''
+
 	return `
 		<div class="demo-app opfs-unavailable">
 			<h4>⚠️ OPFS Not Available</h4>
 			<p class="demo-desc">Origin Private File System is not accessible in your current browser context.</p>
 
+			${bugNotice}
+
 			<div class="unavailable-reasons">
 				<h5>Possible reasons:</h5>
 				<ul>
+					${isKnownBug ? '<li>🐛 <strong>Android WebView 132 bug</strong> - Known issue, fix is rolling out</li>' : ''}
 					<li>🔒 <strong>Private/Incognito browsing mode</strong> - OPFS is often disabled</li>
 					<li>📱 <strong>Safari iOS limitations</strong> - Safari has partial OPFS support</li>
 					<li>🌐 <strong>Cross-origin iframe</strong> - OPFS requires same-origin context</li>
@@ -1100,8 +1145,9 @@ function createOpfsUnavailableMessage(): string {
 				<ul>
 					<li>✅ Use the <strong>Drag & Drop</strong> tab - works everywhere!</li>
 					<li>✅ Use the <strong>Error Handling</strong> tab - demonstrates API usage</li>
-					<li>✅ Open in <strong>Chrome, Edge, or Opera</strong> in normal browsing mode</li>
+					<li>✅ Open in <strong>Chrome, Edge, or Opera</strong> on desktop in normal browsing mode</li>
 					<li>✅ Check the <strong>API Reference Examples</strong> below to see code snippets</li>
+					<li>📖 Read our <strong><a href="https://github.com/mikesaintsg/filesystem/blob/main/guides/polyfill.md" target="_blank">Polyfill Guide</a></strong> for IndexedDB fallback</li>
 				</ul>
 			</div>
 		</div>

@@ -52,6 +52,7 @@ const nativeHandle = file.native
 ## Documentation
 
 - **[API Guide](./guides/filesystem.md)** — Comprehensive usage documentation
+- **[Polyfill Guide](./guides/polyfill.md)** — IndexedDB fallback for when OPFS is unavailable
 
 ## Core API
 
@@ -174,6 +175,16 @@ npm run dev
 | `showOpenFilePicker`         | 86+    | 86+    | ❌     | ❌      |
 | `showSaveFilePicker`         | 86+    | 86+    | ❌     | ❌      |
 | `showDirectoryPicker`        | 86+    | 86+    | ❌     | ❌      |
+
+### Known Issues
+
+**Android WebView 132 Bug**: There is a known regression bug in Android WebView version 132 (affects Chrome/Edge on Android 14/15) that causes OPFS to fail with the error:
+
+```
+NotAllowedError: It was determined that certain files are unsafe for access...
+```
+
+This is a Chromium bug, not a limitation of this library. A fix is rolling out in subsequent WebView updates. See our [Polyfill Guide](./guides/polyfill.md) for IndexedDB fallback workarounds.
 
 ## Comparison
 
