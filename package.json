@@ -1,28 +1,25 @@
 {
-	"name": "@mikesaintsg/indexeddb",
+	"name": "@mikesaintsg/filesystem",
 	"version": "0.0.1",
 	"type": "module",
-	"description": "Type-safe IndexedDB wrapper with transaction management, migrations, and full TypeScript support. Zero runtime dependencies.",
+	"description": "Type-safe FileSystem wrapper with full TypeScript support. Zero runtime dependencies.",
 	"keywords": [
 		"typescript",
-		"indexeddb",
-		"database",
-		"browser-storage",
-		"transactions",
-		"migrations",
+		"filesystem",
+		"file",
 		"type-safe",
 		"promise-based",
 		"zero-dependencies"
 	],
-	"author": "Mike S",
+	"author": "Mike Garcia",
 	"license": "MIT",
-	"homepage": "https://github.com/mikesaintsg/indexeddb#readme",
+	"homepage": "https://github.com/mikesaintsg/filesystem#readme",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/mikesaintsg/indexeddb.git"
+		"url": "https://github.com/mikesaintsg/filesystem.git"
 	},
 	"bugs": {
-		"url": "https://github.com/mikesaintsg/indexeddb/issues"
+		"url": "https://github.com/mikesaintsg/filesystem/issues"
 	},
 	"engines": {
 		"node": ">=18.0.0"
