@@ -56,7 +56,7 @@ declare global {
 
 	interface FilePickerAcceptType {
 		description?: string
-		accept: Record<string, string[]>
+		accept: Record<string, readonly string[]>
 	}
 
 	type StartInDirectory =

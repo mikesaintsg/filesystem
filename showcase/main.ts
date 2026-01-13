@@ -112,6 +112,4 @@ if (errorDemo) {
 		.join('<br>')
 }
 
-// Log that showcase loaded
-
 console.log('@mikesaintsg/filesystem showcase loaded')
