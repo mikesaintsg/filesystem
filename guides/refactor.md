@@ -98,8 +98,8 @@ listEntries(path: string): Promise<readonly DirectoryEntry[]>
 // ─────────────────────────────────────────────────────────────
 
 getQuota(): Promise<StorageQuota>
-exportData(options?: ExportOptions): Promise<ExportedFileSystem>
-importData(data: ExportedFileSystem, options?: ImportOptions): Promise<void>
+export(options?: ExportOptions): Promise<ExportedFileSystem>
+import(data: ExportedFileSystem, options?: ImportOptions): Promise<void>
 }
 ```
 
@@ -590,7 +590,7 @@ oldFS.close()
 
 // Import to new adapter
 const newFS = await createFileSystem({ adapter: new OPFSAdapter() })
-await newFS.import(exported, { mode: 'replace' })
+await newFS.import(exported)
 ```
 
 ### Custom Adapter
