@@ -13,13 +13,15 @@
  * - Drag & Drop: Drop files and folders
  * - Storage Quota: Show quota usage
  * - Error Handling: Demonstrate typed errors
+ *
+ * MOBILE SUPPORT: When OPFS is unavailable (private browsing, Safari iOS limitations),
+ * the showcase provides demo mode with simulated examples and clear explanations.
  */
 
 import './styles.css'
 import type { ExampleResult, InteractiveDemoResult } from './examples/types.js'
 import {
 	createFileSystem,
-	isOPFSSupported,
 	isFilePickerSupported,
 	formatBytes,
 	isNotFoundError,
@@ -37,9 +39,11 @@ import type { FileSystemInterface, DirectoryInterface, FileInterface } from '~/s
 
 type TabId = 'opfs' | 'directories' | 'files' | 'streams' | 'pickers' | 'dragdrop' | 'errors'
 
-let fs: FileSystemInterface
-let root: DirectoryInterface
-let activeTab: TabId = 'opfs'
+let fs: FileSystemInterface | null = null
+let root: DirectoryInterface | null = null
+let activeTab: TabId = 'dragdrop' // Default to drag-drop which works everywhere
+let opfsAvailable = false
+let opfsError: string | null = null
 const demoCleanups: (() => void)[] = []
 
 // ============================================================================
@@ -54,14 +58,21 @@ interface TabDefinition {
 }
 
 const TABS: readonly TabDefinition[] = [
+	{ id: 'dragdrop', emoji: '🎯', label: 'Drag & Drop', description: 'Drop files and folders - works everywhere' },
 	{ id: 'opfs', emoji: '💾', label: 'OPFS Storage', description: 'Origin Private File System - sandboxed storage for web apps' },
 	{ id: 'directories', emoji: '📁', label: 'Directories', description: 'Create nested directories, list contents, recursive walk' },
 	{ id: 'files', emoji: '📄', label: 'File Operations', description: 'Read/write text, binary, blob, stream formats' },
 	{ id: 'streams', emoji: '🔄', label: 'Writable Streams', description: 'Streaming writes with seek, truncate, abort' },
 	{ id: 'pickers', emoji: '📂', label: 'File Pickers', description: 'Native file dialogs (Chromium only)' },
-	{ id: 'dragdrop', emoji: '🎯', label: 'Drag & Drop', description: 'Drop files and folders' },
 	{ id: 'errors', emoji: '⚠️', label: 'Error Handling', description: 'Typed error classes and type guards' },
 ]
+
+// Tabs that require OPFS to work
+const OPFS_REQUIRED_TABS: readonly TabId[] = ['opfs', 'directories', 'files', 'streams']
+
+function requiresOPFS(tab: TabId): boolean {
+	return OPFS_REQUIRED_TABS.includes(tab)
+}
 
 // ============================================================================
 // Example Definitions
@@ -134,11 +145,40 @@ function getExamplesForTab(tab: TabId): readonly ExampleDefinition[] {
 }
 
 // ============================================================================
+// OPFS Availability Check Helper
+// ============================================================================
+
+function checkOPFSAvailable(): ExampleResult | null {
+	if (!opfsAvailable || !fs || !root) {
+		return {
+			success: false,
+			message: `OPFS not available: ${opfsError ?? 'Unknown error'}. Try using Chrome, Edge, or Opera in normal browsing mode.`,
+			code: `// OPFS may be unavailable due to:
+// - Private/Incognito browsing mode
+// - Safari iOS limitations
+// - Browser security restrictions
+// - Cross-origin iframe restrictions
+
+// Check OPFS support before using:
+import { isOPFSSupported } from '@mikesaintsg/filesystem'
+if (isOPFSSupported()) {
+    const fs = await createFileSystem()
+    const root = await fs.getRoot()
+}`,
+		}
+	}
+	return null
+}
+
+// ============================================================================
 // OPFS Examples
 // ============================================================================
 
 async function demonstrateQuota(): Promise<ExampleResult> {
-	const quota = await fs.getQuota()
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const quota = await fs!.getQuota()
 	return {
 		success: true,
 		message: `Storage: ${formatBytes(quota.usage)} used of ${formatBytes(quota.quota)} (${quota.percentUsed.toFixed(1)}% used)`,
@@ -152,7 +192,10 @@ console.log(\`Percent: \${quota.percentUsed.toFixed(1)}%\`)`,
 }
 
 async function demonstrateCreateFile(): Promise<ExampleResult> {
-	const file = await root.createFile('demo-file.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('demo-file.txt')
 	await file.write('Hello, OPFS!')
 	return {
 		success: true,
@@ -164,7 +207,10 @@ await file.write('Hello, OPFS!')`,
 }
 
 async function demonstrateReadFile(): Promise<ExampleResult> {
-	const file = await root.getFile('demo-file.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.getFile('demo-file.txt')
 	if (!file) {
 		return { success: false, message: 'File not found. Run "Create File" first.' }
 	}
@@ -182,7 +228,10 @@ if (file) {
 }
 
 async function demonstrateWriteFile(): Promise<ExampleResult> {
-	const file = await root.createFile('demo-file.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('demo-file.txt')
 	const content = `Updated at ${new Date().toISOString()}`
 	await file.write(content)
 	return {
@@ -196,11 +245,14 @@ await file.write('New content')
 }
 
 async function demonstrateDeleteFile(): Promise<ExampleResult> {
-	const exists = await root.hasFile('demo-file.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const exists = await root!.hasFile('demo-file.txt')
 	if (!exists) {
 		return { success: false, message: 'File not found. Run "Create File" first.' }
 	}
-	await root.removeFile('demo-file.txt')
+	await root!.removeFile('demo-file.txt')
 	return {
 		success: true,
 		message: 'File deleted successfully',
@@ -209,11 +261,14 @@ async function demonstrateDeleteFile(): Promise<ExampleResult> {
 }
 
 async function demonstrateNativeAccess(): Promise<ExampleResult> {
-	const file = await root.createFile('native-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('native-demo.txt')
 	await file.write('Native access demo')
 	const nativeHandle = file.native
 	const nativeFile = await nativeHandle.getFile()
-	await root.removeFile('native-demo.txt')
+	await root!.removeFile('native-demo.txt')
 	return {
 		success: true,
 		message: 'Accessed native FileSystemFileHandle',
@@ -235,7 +290,10 @@ console.log(nativeFile.name, nativeFile.size)`,
 // ============================================================================
 
 async function demonstrateCreateDirectory(): Promise<ExampleResult> {
-	const dir = await root.createDirectory('demo-folder')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const dir = await root!.createDirectory('demo-folder')
 	return {
 		success: true,
 		message: `Created directory: ${dir.getName()}`,
@@ -245,7 +303,10 @@ async function demonstrateCreateDirectory(): Promise<ExampleResult> {
 }
 
 async function demonstrateCreatePath(): Promise<ExampleResult> {
-	const deep = await root.createPath('data', 'cache', 'images')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const deep = await root!.createPath('data', 'cache', 'images')
 	return {
 		success: true,
 		message: 'Created nested directories: data/cache/images',
@@ -257,18 +318,21 @@ const deep = await root.createPath('data', 'cache', 'images')
 }
 
 async function demonstrateListEntries(): Promise<ExampleResult> {
-	// Create some demo content
-	await root.createFile('list-demo-1.txt')
-	await root.createFile('list-demo-2.txt')
-	await root.createDirectory('list-demo-folder')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
 
-	const entries = await root.list()
+	// Create some demo content
+	await root!.createFile('list-demo-1.txt')
+	await root!.createFile('list-demo-2.txt')
+	await root!.createDirectory('list-demo-folder')
+
+	const entries = await root!.list()
 	const summary = entries.map(e => `${e.kind}: ${e.name}`)
 
 	// Cleanup
-	await root.removeFile('list-demo-1.txt')
-	await root.removeFile('list-demo-2.txt')
-	await root.removeDirectory('list-demo-folder')
+	await root!.removeFile('list-demo-1.txt')
+	await root!.removeFile('list-demo-2.txt')
+	await root!.removeDirectory('list-demo-folder')
 
 	return {
 		success: true,
@@ -282,21 +346,24 @@ for (const entry of entries) {
 }
 
 async function demonstrateAsyncIteration(): Promise<ExampleResult> {
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
 	// Create demo content
-	await root.createFile('iter-1.txt')
-	await root.createFile('iter-2.txt')
-	await root.createDirectory('iter-folder')
+	await root!.createFile('iter-1.txt')
+	await root!.createFile('iter-2.txt')
+	await root!.createDirectory('iter-folder')
 
 	const entries: string[] = []
-	for await (const entry of root.entries()) {
+	for await (const entry of root!.entries()) {
 		entries.push(`${entry.kind}: ${entry.name}`)
 		if (entries.length >= 5) break // Demo early break
 	}
 
 	// Cleanup
-	await root.removeFile('iter-1.txt')
-	await root.removeFile('iter-2.txt')
-	await root.removeDirectory('iter-folder')
+	await root!.removeFile('iter-1.txt')
+	await root!.removeFile('iter-2.txt')
+	await root!.removeDirectory('iter-folder')
 
 	return {
 		success: true,
@@ -311,8 +378,11 @@ for await (const entry of directory.entries()) {
 }
 
 async function demonstrateWalk(): Promise<ExampleResult> {
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
 	// Create demo structure
-	const demoDir = await root.createDirectory('walk-demo')
+	const demoDir = await root!.createDirectory('walk-demo')
 	await demoDir.createFile('file1.txt')
 	const subDir = await demoDir.createDirectory('subdir')
 	await subDir.createFile('file2.txt')
@@ -324,7 +394,7 @@ async function demonstrateWalk(): Promise<ExampleResult> {
 	}
 
 	// Cleanup
-	await root.removeDirectory('walk-demo', { recursive: true })
+	await root!.removeDirectory('walk-demo', { recursive: true })
 
 	return {
 		success: true,
@@ -338,8 +408,11 @@ async function demonstrateWalk(): Promise<ExampleResult> {
 }
 
 async function demonstrateWalkWithFilter(): Promise<ExampleResult> {
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
 	// Create demo structure
-	const demoDir = await root.createDirectory('walk-filter-demo')
+	const demoDir = await root!.createDirectory('walk-filter-demo')
 	await demoDir.createFile('visible.txt')
 	await demoDir.createFile('.hidden')
 	const subDir = await demoDir.createDirectory('visible-folder')
@@ -358,7 +431,7 @@ async function demonstrateWalkWithFilter(): Promise<ExampleResult> {
 	}
 
 	// Cleanup
-	await root.removeDirectory('walk-filter-demo', { recursive: true })
+	await root!.removeDirectory('walk-filter-demo', { recursive: true })
 
 	return {
 		success: true,
@@ -380,10 +453,13 @@ async function demonstrateWalkWithFilter(): Promise<ExampleResult> {
 // ============================================================================
 
 async function demonstrateReadText(): Promise<ExampleResult> {
-	const file = await root.createFile('text-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('text-demo.txt')
 	await file.write('Hello, World! 🌍')
 	const text = await file.getText()
-	await root.removeFile('text-demo.txt')
+	await root!.removeFile('text-demo.txt')
 	return {
 		success: true,
 		message: `Read text: "${text}"`,
@@ -393,11 +469,14 @@ async function demonstrateReadText(): Promise<ExampleResult> {
 }
 
 async function demonstrateReadBinary(): Promise<ExampleResult> {
-	const file = await root.createFile('binary-demo.bin')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('binary-demo.bin')
 	await file.write(new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f]))
 	const buffer = await file.getArrayBuffer()
 	const view = new Uint8Array(buffer)
-	await root.removeFile('binary-demo.bin')
+	await root!.removeFile('binary-demo.bin')
 	return {
 		success: true,
 		message: `Read ${buffer.byteLength} bytes as ArrayBuffer`,
@@ -408,10 +487,13 @@ const view = new Uint8Array(buffer)`,
 }
 
 async function demonstrateReadBlob(): Promise<ExampleResult> {
-	const file = await root.createFile('blob-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('blob-demo.txt')
 	await file.write('Blob content')
 	const blob = await file.getBlob()
-	await root.removeFile('blob-demo.txt')
+	await root!.removeFile('blob-demo.txt')
 	return {
 		success: true,
 		message: `Read as Blob: ${blob.size} bytes, type: ${blob.type || 'unknown'}`,
@@ -422,8 +504,11 @@ console.log(blob.size, blob.type)`,
 }
 
 async function demonstrateReadStream(): Promise<ExampleResult> {
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
 	const content = 'Stream content: chunk by chunk processing'
-	const file = await root.createFile('stream-demo.txt')
+	const file = await root!.createFile('stream-demo.txt')
 	await file.write(content)
 
 	const stream = file.getStream()
@@ -438,7 +523,7 @@ async function demonstrateReadStream(): Promise<ExampleResult> {
 		chunks++
 	}
 
-	await root.removeFile('stream-demo.txt')
+	await root!.removeFile('stream-demo.txt')
 	return {
 		success: true,
 		message: `Streamed ${totalBytes} bytes in ${chunks} chunk(s)`,
@@ -454,11 +539,13 @@ while (true) {
 }
 
 async function demonstrateWritePosition(): Promise<ExampleResult> {
-	const file = await root.createFile('position-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+	const file = await root!.createFile('position-demo.txt')
 	await file.write('Hello, World!')
 	await file.write('XXXXX', { position: 7, keepExistingData: true })
 	const result = await file.getText()
-	await root.removeFile('position-demo.txt')
+	await root!.removeFile('position-demo.txt')
 	return {
 		success: true,
 		message: `Wrote at position 7: "${result}"`,
@@ -470,12 +557,15 @@ await file.write('XXXXX', { position: 7, keepExistingData: true })
 }
 
 async function demonstrateAppend(): Promise<ExampleResult> {
-	const file = await root.createFile('append-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('append-demo.txt')
 	await file.write('Line 1')
 	await file.append('\nLine 2')
 	await file.append('\nLine 3')
 	const result = await file.getText()
-	await root.removeFile('append-demo.txt')
+	await root!.removeFile('append-demo.txt')
 	return {
 		success: true,
 		message: 'Appended 2 lines to file',
@@ -487,12 +577,15 @@ await file.append('\\nLine 3')`,
 }
 
 async function demonstrateTruncate(): Promise<ExampleResult> {
-	const file = await root.createFile('truncate-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('truncate-demo.txt')
 	await file.write('This is a long string that will be truncated')
 	const before = await file.getText()
 	await file.truncate(10)
 	const after = await file.getText()
-	await root.removeFile('truncate-demo.txt')
+	await root!.removeFile('truncate-demo.txt')
 	return {
 		success: true,
 		message: `Truncated from ${before.length} to ${after.length} bytes`,
@@ -503,10 +596,13 @@ await file.truncate(10) // File is now 10 bytes`,
 }
 
 async function demonstrateMetadata(): Promise<ExampleResult> {
-	const file = await root.createFile('metadata-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('metadata-demo.txt')
 	await file.write('Metadata demo content')
 	const metadata = await file.getMetadata()
-	await root.removeFile('metadata-demo.txt')
+	await root!.removeFile('metadata-demo.txt')
 	return {
 		success: true,
 		message: `File: ${metadata.name}, Size: ${formatBytes(metadata.size)}`,
@@ -529,7 +625,10 @@ console.log(metadata.lastModified) // timestamp`,
 // ============================================================================
 
 async function demonstrateStreamWrite(): Promise<ExampleResult> {
-	const file = await root.createFile('writable-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('writable-demo.txt')
 	const writable = await file.openWritable()
 
 	await writable.write('First chunk')
@@ -538,7 +637,7 @@ async function demonstrateStreamWrite(): Promise<ExampleResult> {
 	await writable.close()
 
 	const content = await file.getText()
-	await root.removeFile('writable-demo.txt')
+	await root!.removeFile('writable-demo.txt')
 
 	return {
 		success: true,
@@ -553,7 +652,10 @@ await writable.close() // Commit changes`,
 }
 
 async function demonstrateStreamSeek(): Promise<ExampleResult> {
-	const file = await root.createFile('seek-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('seek-demo.txt')
 	const writable = await file.openWritable()
 
 	await writable.write('AAAAAAAAAA') // 10 A's
@@ -562,7 +664,7 @@ async function demonstrateStreamSeek(): Promise<ExampleResult> {
 	await writable.close()
 
 	const content = await file.getText()
-	await root.removeFile('seek-demo.txt')
+	await root!.removeFile('seek-demo.txt')
 
 	return {
 		success: true,
@@ -578,7 +680,10 @@ await writable.close()
 }
 
 async function demonstrateStreamTruncate(): Promise<ExampleResult> {
-	const file = await root.createFile('stream-truncate-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('stream-truncate-demo.txt')
 	const writable = await file.openWritable()
 
 	await writable.write('This content will be partially truncated')
@@ -586,7 +691,7 @@ async function demonstrateStreamTruncate(): Promise<ExampleResult> {
 	await writable.close()
 
 	const content = await file.getText()
-	await root.removeFile('stream-truncate-demo.txt')
+	await root!.removeFile('stream-truncate-demo.txt')
 
 	return {
 		success: true,
@@ -600,7 +705,10 @@ await writable.close()`,
 }
 
 async function demonstrateStreamAbort(): Promise<ExampleResult> {
-	const file = await root.createFile('abort-demo.txt')
+	const unavailable = checkOPFSAvailable()
+	if (unavailable) return unavailable
+
+	const file = await root!.createFile('abort-demo.txt')
 	await file.write('Original content')
 
 	const writable = await file.openWritable()
@@ -608,7 +716,7 @@ async function demonstrateStreamAbort(): Promise<ExampleResult> {
 	await writable.abort() // Discard changes
 
 	const content = await file.getText()
-	await root.removeFile('abort-demo.txt')
+	await root!.removeFile('abort-demo.txt')
 
 	return {
 		success: true,
@@ -627,7 +735,7 @@ await writable.abort() // Discard changes
 // ============================================================================
 
 function demonstratePickerSupport(): ExampleResult {
-	const supported = fs.isUserAccessSupported()
+	const supported = fs?.isUserAccessSupported() ?? false
 	return {
 		success: true,
 		message: supported ? 'File pickers ARE supported in this browser' : 'File pickers NOT supported (use fallbacks)',
@@ -642,7 +750,7 @@ function demonstratePickerSupport(): ExampleResult {
 }
 
 async function demonstrateOpenPicker(): Promise<ExampleResult> {
-	if (!fs.isUserAccessSupported()) {
+	if (!fs?.isUserAccessSupported()) {
 		return {
 			success: false,
 			message: 'File pickers not supported in this browser. Use Chrome, Edge, or Opera.',
@@ -686,7 +794,7 @@ input.click()`,
 }
 
 async function demonstrateSavePicker(): Promise<ExampleResult> {
-	if (!fs.isUserAccessSupported()) {
+	if (!fs?.isUserAccessSupported()) {
 		return {
 			success: false,
 			message: 'File pickers not supported in this browser.',
@@ -727,7 +835,7 @@ await file.write('Content to save')`,
 }
 
 async function demonstrateDirectoryPicker(): Promise<ExampleResult> {
-	if (!fs.isUserAccessSupported()) {
+	if (!fs?.isUserAccessSupported()) {
 		return {
 			success: false,
 			message: 'Directory picker not supported in this browser.',
@@ -760,12 +868,29 @@ for await (const entry of dir.entries()) {
 }
 
 // ============================================================================
-// Drag & Drop Examples
+// Drag & Drop Examples (These work without OPFS!)
 // ============================================================================
 
 async function demonstrateFromFile(): Promise<ExampleResult> {
+	// These functions work even without OPFS - they use a read-only wrapper
 	// Create a File object programmatically for demo
 	const nativeFile = new File(['Demo file content'], 'demo.txt', { type: 'text/plain' })
+
+	// fs.fromFile works without OPFS - it creates a read-only wrapper
+	if (!fs) {
+		// Fallback: demonstrate that File API works directly
+		const content = await nativeFile.text()
+		return {
+			success: true,
+			message: `Direct File API: ${nativeFile.name}`,
+			data: { name: nativeFile.name, content },
+			code: `// Without fs wrapper, use File API directly
+const file = input.files[0]
+const content = await file.text()
+console.log(content)`,
+		}
+	}
+
 	const file = await fs.fromFile(nativeFile)
 	const content = await file.getText()
 
@@ -788,6 +913,21 @@ async function demonstrateFromFiles(): Promise<ExampleResult> {
 	dt.items.add(new File(['Content 2'], 'file2.txt', { type: 'text/plain' }))
 	const fileList = dt.files
 
+	if (!fs) {
+		// Fallback: demonstrate File API directly
+		const names = Array.from(fileList).map(f => f.name)
+		return {
+			success: true,
+			message: `Direct File API: ${fileList.length} files`,
+			data: names,
+			code: `// Without fs wrapper, iterate FileList directly
+for (const file of input.files) {
+    const content = await file.text()
+    console.log(file.name, content)
+}`,
+		}
+	}
+
 	const files = await fs.fromFiles(fileList)
 
 	return {
@@ -803,10 +943,32 @@ for (const file of files) {
 }
 
 // ============================================================================
-// Error Examples
+// Error Examples (These can show simulated examples even without OPFS)
 // ============================================================================
 
 async function demonstrateNotFoundError(): Promise<ExampleResult> {
+	// If OPFS not available, show simulated error example
+	if (!opfsAvailable || !root) {
+		// Demonstrate the error class without OPFS
+		const error = new NotFoundError('non-existent-file.txt')
+		return {
+			success: true,
+			message: `NotFoundError class: ${error.message}`,
+			data: { code: error.code, path: error.path, name: error.name },
+			code: `import { NotFoundError } from '@mikesaintsg/filesystem'
+
+// Error is thrown when file/directory not found
+try {
+    await directory.resolveFile('missing.txt')
+} catch (error) {
+    if (error instanceof NotFoundError) {
+        console.log(\`File not found: \${error.path}\`)
+        console.log(\`Error code: \${error.code}\`)
+    }
+}`,
+		}
+	}
+
 	try {
 		await root.resolveFile('non-existent-file-12345.txt')
 		return { success: false, message: 'Expected NotFoundError' }
@@ -831,6 +993,35 @@ async function demonstrateNotFoundError(): Promise<ExampleResult> {
 }
 
 async function demonstrateTypeGuards(): Promise<ExampleResult> {
+	// If OPFS not available, show simulated type guard example
+	if (!opfsAvailable || !root) {
+		const error = new NotFoundError('test.txt')
+		const checks = {
+			isNotFoundError: isNotFoundError(error),
+			isNotAllowedError: isNotAllowedError(error),
+			isQuotaExceededError: isQuotaExceededError(error),
+			isAbortError: isAbortError(error),
+		}
+
+		return {
+			success: true,
+			message: 'Type guards provide safe error checking (simulated)',
+			data: checks,
+			code: `import { isNotFoundError, isNotAllowedError } from '@mikesaintsg/filesystem'
+
+try {
+    await directory.resolveFile('file.txt')
+} catch (error) {
+    if (isNotFoundError(error)) {
+        // error is typed as NotFoundError
+        console.log(error.path)
+    } else if (isNotAllowedError(error)) {
+        // error is typed as NotAllowedError
+    }
+}`,
+		}
+	}
+
 	try {
 		await root.resolveFile('non-existent-file.txt')
 	} catch (error) {
@@ -883,7 +1074,48 @@ function demonstrateErrorCodes(): ExampleResult {
 // Interactive Demos
 // ============================================================================
 
+function createOpfsUnavailableMessage(): string {
+	return `
+		<div class="demo-app opfs-unavailable">
+			<h4>⚠️ OPFS Not Available</h4>
+			<p class="demo-desc">Origin Private File System is not accessible in your current browser context.</p>
+
+			<div class="unavailable-reasons">
+				<h5>Possible reasons:</h5>
+				<ul>
+					<li>🔒 <strong>Private/Incognito browsing mode</strong> - OPFS is often disabled</li>
+					<li>📱 <strong>Safari iOS limitations</strong> - Safari has partial OPFS support</li>
+					<li>🌐 <strong>Cross-origin iframe</strong> - OPFS requires same-origin context</li>
+					<li>⚙️ <strong>Browser security restrictions</strong> - Some browsers block storage APIs</li>
+				</ul>
+			</div>
+
+			<div class="unavailable-error">
+				<h5>Error details:</h5>
+				<code>${opfsError ?? 'Unknown error'}</code>
+			</div>
+
+			<div class="unavailable-alternatives">
+				<h5>Try these alternatives:</h5>
+				<ul>
+					<li>✅ Use the <strong>Drag & Drop</strong> tab - works everywhere!</li>
+					<li>✅ Use the <strong>Error Handling</strong> tab - demonstrates API usage</li>
+					<li>✅ Open in <strong>Chrome, Edge, or Opera</strong> in normal browsing mode</li>
+					<li>✅ Check the <strong>API Reference Examples</strong> below to see code snippets</li>
+				</ul>
+			</div>
+		</div>
+	`
+}
+
 function createOpfsDemo(): InteractiveDemoResult {
+	// Return unavailable message if OPFS is not accessible
+	if (!opfsAvailable || !fs || !root) {
+		return {
+			html: createOpfsUnavailableMessage(),
+		}
+	}
+
 	return {
 		html: `
 			<div class="demo-app opfs-demo">
@@ -938,12 +1170,12 @@ function createOpfsDemo(): InteractiveDemoResult {
 			let currentFile: FileInterface | null = null
 
 			const updateQuota = async(): Promise<void> => {
-				const quota = await fs.getQuota()
+				const quota = await fs!.getQuota()
 				quotaInfoSpan.textContent = `Storage: ${formatBytes(quota.usage)} / ${formatBytes(quota.quota)} (${quota.percentUsed.toFixed(1)}% used)`
 			}
 
 			const refreshFileList = async(): Promise<void> => {
-				const files = await root.listFiles()
+				const files = await root!.listFiles()
 				if (files.length === 0) {
 					fileListDiv.innerHTML = '<p class="placeholder">No files yet. Create one!</p>'
 					return
@@ -978,7 +1210,7 @@ function createOpfsDemo(): InteractiveDemoResult {
 				void (async() => {
 					const name = filenameInput.value.trim()
 					if (!name) return
-					currentFile = await root.createFile(name)
+					currentFile = await root!.createFile(name)
 					fileContent.value = ''
 					saveBtn.disabled = false
 					deleteBtn.disabled = false
@@ -999,7 +1231,7 @@ function createOpfsDemo(): InteractiveDemoResult {
 			deleteBtn.addEventListener('click', () => {
 				void (async() => {
 					if (!currentFile) return
-					await root.removeFile(currentFile.getName())
+					await root!.removeFile(currentFile.getName())
 					currentFile = null
 					fileContent.value = ''
 					filenameInput.value = ''
@@ -1017,6 +1249,13 @@ function createOpfsDemo(): InteractiveDemoResult {
 }
 
 function createDirectoryDemo(): InteractiveDemoResult {
+	// Return unavailable message if OPFS is not accessible
+	if (!opfsAvailable || !fs || !root) {
+		return {
+			html: createOpfsUnavailableMessage(),
+		}
+	}
+
 	return {
 		html: `
 			<div class="demo-app directory-demo">
@@ -1065,7 +1304,7 @@ function createDirectoryDemo(): InteractiveDemoResult {
 
 				lines.push('📁 / (OPFS Root)')
 
-				for await (const { entry, depth } of root.walk({ maxDepth: 4 })) {
+				for await (const { entry, depth } of root!.walk({ maxDepth: 4 })) {
 					const indent = '  '.repeat(depth + 1)
 					const icon = entry.kind === 'file' ? '📄' : '📁'
 					lines.push(`${indent}${icon} ${entry.name}`)
@@ -1088,17 +1327,17 @@ function createDirectoryDemo(): InteractiveDemoResult {
 					const pathStr = pathInput.value.trim()
 					if (!pathStr) return
 					const segments = pathStr.split('/').filter(s => s)
-					await root.createPath(...segments)
+					await root!.createPath(...segments)
 					await refreshTree()
 				})()
 			})
 
 			cleanupBtn.addEventListener('click', () => {
 				void (async() => {
-					const entries = await root.list()
+					const entries = await root!.list()
 					for (const entry of entries) {
 						if (entry.kind === 'directory') {
-							await root.removeDirectory(entry.name, { recursive: true })
+							await root!.removeDirectory(entry.name, { recursive: true })
 						}
 					}
 					await refreshTree()
@@ -1111,11 +1350,36 @@ function createDirectoryDemo(): InteractiveDemoResult {
 }
 
 function createDragDropDemo(): InteractiveDemoResult {
+	// Drag & Drop works everywhere - doesn't require OPFS!
+	// Create a simple file wrapper for when fs is not available
+	const createSimpleFileWrapper = (file: File): FileInterface => ({
+		native: null as unknown as FileSystemFileHandle, // Not available without real handle
+		getName: () => file.name,
+		getMetadata: () => Promise.resolve({
+			name: file.name,
+			size: file.size,
+			type: file.type,
+			lastModified: file.lastModified,
+		}),
+		getText: () => file.text(),
+		getArrayBuffer: () => file.arrayBuffer(),
+		getBlob: () => Promise.resolve(file),
+		getStream: () => file.stream(),
+		write: () => Promise.reject(new Error('Read-only file')),
+		append: () => Promise.reject(new Error('Read-only file')),
+		truncate: () => Promise.reject(new Error('Read-only file')),
+		openWritable: () => Promise.reject(new Error('Read-only file')),
+		hasReadPermission: () => Promise.resolve(true),
+		hasWritePermission: () => Promise.resolve(false),
+		requestWritePermission: () => Promise.resolve(false),
+		isSameEntry: () => Promise.resolve(false),
+	})
+
 	return {
 		html: `
 			<div class="demo-app dragdrop-demo">
 				<h4>🎯 Drag & Drop Zone</h4>
-				<p class="demo-desc">Drop files or folders here to inspect them</p>
+				<p class="demo-desc">Drop files or folders here to inspect them${!opfsAvailable ? ' (works without OPFS!)' : ''}</p>
 
 				<div id="drop-zone" class="drop-zone">
 					<div class="drop-content">
@@ -1183,12 +1447,18 @@ function createDragDropDemo(): InteractiveDemoResult {
 					const items = e.dataTransfer?.items
 					if (!items) return
 
+					// Process files directly using File API when fs is not available
 					const files: FileInterface[] = []
 					for (const item of items) {
 						if (item.kind === 'file') {
 							const file = item.getAsFile()
 							if (file) {
-								files.push(await fs.fromFile(file))
+								if (fs) {
+									files.push(await fs.fromFile(file))
+								} else {
+									// Fallback: create a simple read-only wrapper
+									files.push(createSimpleFileWrapper(file))
+								}
 							}
 						}
 					}
@@ -1199,8 +1469,14 @@ function createDragDropDemo(): InteractiveDemoResult {
 			fileInput.addEventListener('change', () => {
 				void (async() => {
 					if (fileInput.files) {
-						const files = await fs.fromFiles(fileInput.files)
-						await showResults(files)
+						if (fs) {
+							const files = await fs.fromFiles(fileInput.files)
+							await showResults(files)
+						} else {
+							// Fallback: create simple wrappers
+							const files = Array.from(fileInput.files).map(createSimpleFileWrapper)
+							await showResults(files)
+						}
 					}
 				})()
 			})
@@ -1266,11 +1542,11 @@ function renderApp(): void {
 	const h1 = createElement('h1', { textContent: '📂 File System Showcase' })
 	const subtitle = createElement('p', { textContent: 'Comprehensive demonstration of @mikesaintsg/filesystem features' })
 
-	// Browser support badges
+	// Browser support badges - show actual availability, not just API detection
 	const badges = createElement('div', { className: 'support-badges' })
 	badges.innerHTML = `
-		<span class="badge ${isOPFSSupported() ? 'supported' : 'unsupported'}">
-			${isOPFSSupported() ? '✅' : '❌'} OPFS
+		<span class="badge ${opfsAvailable ? 'supported' : 'unsupported'}">
+			${opfsAvailable ? '✅' : '❌'} OPFS
 		</span>
 		<span class="badge ${isFilePickerSupported() ? 'supported' : 'unsupported'}">
 			${isFilePickerSupported() ? '✅' : '❌'} File Pickers
@@ -1278,14 +1554,27 @@ function renderApp(): void {
 	`
 	header.append(h1, subtitle, badges)
 
+	// Show info banner when OPFS is not available
+	if (!opfsAvailable) {
+		const infoBanner = createElement('div', { className: 'info-banner' })
+		infoBanner.innerHTML = `
+			<strong>📱 Limited Mode:</strong> OPFS is not available in your current browser context.
+			<span class="info-detail">The Drag & Drop and Error Handling tabs work without OPFS. Try Chrome, Edge, or Opera in normal browsing mode for full functionality.</span>
+		`
+		header.appendChild(infoBanner)
+	}
+
 	// Navigation
 	const nav = createElement('nav', { className: 'tabs' })
 	TABS.forEach(tab => {
+		const isDisabled = requiresOPFS(tab.id) && !opfsAvailable
 		const button = createElement('button', {
-			className: `tab ${activeTab === tab.id ? 'active' : ''}`,
+			className: `tab ${activeTab === tab.id ? 'active' : ''} ${isDisabled ? 'disabled-tab' : ''}`,
 			textContent: `${tab.emoji} ${tab.label}`,
 		})
-		button.title = tab.description
+		button.title = isDisabled
+			? `${tab.description} (requires OPFS)`
+			: tab.description
 		button.addEventListener('click', () => {
 			activeTab = tab.id
 			renderApp()
@@ -1435,25 +1724,23 @@ async function runExample(
 // ============================================================================
 
 async function initialize(): Promise<void> {
+	// Try to initialize OPFS, but continue even if it fails
 	try {
 		fs = await createFileSystem()
 		root = await fs.getRoot()
-		renderApp()
-		console.log('@mikesaintsg/filesystem showcase loaded')
+		opfsAvailable = true
+		opfsError = null
+		console.log('@mikesaintsg/filesystem showcase loaded with OPFS support')
 	} catch (error) {
-		console.error('Failed to initialize:', error)
-		const app = document.getElementById('app')
-		if (app) {
-			app.innerHTML = `
-				<div class="error-container">
-					<h2>⚠️ Initialization Error</h2>
-					<p>Failed to initialize File System. This might happen in private browsing mode.</p>
-					<p class="error-detail">${error instanceof Error ? error.message : 'Unknown error'}</p>
-					<button onclick="window.location.reload()">🔄 Retry</button>
-				</div>
-			`
-		}
+		console.warn('OPFS not available:', error)
+		opfsAvailable = false
+		opfsError = error instanceof Error ? error.message : String(error)
+		// Don't show error screen - continue with limited functionality
+		console.log('@mikesaintsg/filesystem showcase loaded in limited mode (no OPFS)')
 	}
+
+	// Always render the app - it works with or without OPFS
+	renderApp()
 }
 
 void initialize()
