@@ -832,14 +832,15 @@ Update `src/factories.ts` to accept adapter options:
  * ```
  */
 export async function createFileSystem(options?: FileSystemOptions): Promise<FileSystemInterface> {
-const adapter = options?.adapter ?? new OPFSAdapter()
+	const adapter = options?.adapter ?? new OPFSAdapter()
 
-// Verify adapter is available
-const available = await adapter.isAvailable()
-throw new Error(`Storage adapter '${adapter.type}' is not available in this environment`)
-}
+	// Verify adapter is available
+	const available = await adapter.isAvailable()
+	if (!available) {
+		throw new Error(`Storage adapter '${adapter.type}' is not available in this environment`)
+	}
 
-return new FileSystem(adapter)
+	return new FileSystem(adapter)
 }
 ```
 
