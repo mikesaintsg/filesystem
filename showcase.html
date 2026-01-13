@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>@mikesaintsg/filesystem Showcase</title>
+  <script type="module" crossorigin>(function(){const t=document.createElement("link").relList;if(t&&t.supports&&t.supports("modulepreload"))return;for(const e of document.querySelectorAll('link[rel="modulepreload"]'))s(e);new MutationObserver(e=>{for(const o of e)if(o.type==="childList")for(const n of o.addedNodes)n.tagName==="LINK"&&n.rel==="modulepreload"&&s(n)}).observe(document,{childList:!0,subtree:!0});function i(e){const o={};return e.integrity&&(o.integrity=e.integrity),e.referrerPolicy&&(o.referrerPolicy=e.referrerPolicy),e.crossOrigin==="use-credentials"?o.credentials="include":e.crossOrigin==="anonymous"?o.credentials="omit":o.credentials="same-origin",o}function s(e){if(e.ep)return;e.ep=!0;const o=i(e);fetch(e.href,o)}})();function u(){return typeof navigator<"u"&&typeof navigator.storage<"u"&&typeof navigator.storage.getDirectory=="function"}function p(){return typeof window<"u"&&"showOpenFilePicker"in window&&typeof window.showOpenFilePicker=="function"}function f(r){if(r===0)return"0 B";const t=["B","KB","MB","GB","TB"],i=Math.floor(Math.log(r)/Math.log(1024));return`${(r/Math.pow(1024,i)).toFixed(i===0?0:1)} ${t[i]}`}const m={NOT_FOUND:"The requested file or directory was not found",NOT_ALLOWED:"Permission denied for this operation",TYPE_MISMATCH:"Expected file but got directory, or vice versa",NO_MODIFICATION_ALLOWED:"The file or directory cannot be modified",INVALID_STATE:"The file system is in an invalid state",QUOTA_EXCEEDED:"Storage quota has been exceeded",ABORT:"The operation was aborted",SECURITY:"A security error occurred",ENCODING:"An encoding error occurred",NOT_SUPPORTED:"This feature is not supported in this browser"},a=document.getElementById("app");if(!a)throw new Error("App element not found");a.innerHTML=`
+	<div class="showcase">
+		<header>
+			<h1>@mikesaintsg/filesystem</h1>
+			<p class="tagline">Type-safe File System wrapper for the browser</p>
+		</header>
+
+		<section class="feature-detection">
+			<h2>Browser Support</h2>
+			<div class="grid">
+				<div class="card" id="opfs-support">
+					<h3>OPFS</h3>
+					<span class="status"></span>
+				</div>
+				<div class="card" id="picker-support">
+					<h3>File Pickers</h3>
+					<span class="status"></span>
+				</div>
+			</div>
+		</section>
+
+		<section class="demo">
+			<h2>Quick Demo</h2>
+			<div class="demo-area">
+				<p>This library provides a unified, type-safe interface for browser file system APIs:</p>
+				<ul>
+					<li><strong>Origin Private File System (OPFS)</strong> - Sandboxed storage for web apps</li>
+					<li><strong>File System Access API</strong> - Native file picker dialogs (Chromium)</li>
+					<li><strong>File API</strong> - Input element file selection</li>
+					<li><strong>Entries API</strong> - Drag and drop support</li>
+				</ul>
+			</div>
+		</section>
+
+		<section class="utilities">
+			<h2>Utility Functions</h2>
+			<div class="grid">
+				<div class="card">
+					<h3>formatBytes()</h3>
+					<code id="format-demo"></code>
+				</div>
+				<div class="card">
+					<h3>Error Codes</h3>
+					<code id="error-demo"></code>
+				</div>
+			</div>
+		</section>
+
+		<footer>
+			<p>Zero dependencies · Full TypeScript support · MIT License</p>
+		</footer>
+	</div>
+`;function l(r,t){const i=document.getElementById(r);if(!i)return;const s=i.querySelector(".status");s&&(s.textContent=t?"✅ Supported":"❌ Not Available",s.className=`status ${t?"supported":"unsupported"}`)}l("opfs-support",u());l("picker-support",p());const c=document.getElementById("format-demo");if(c){const r=[0,1024,1048576,1073741824];c.innerHTML=r.map(t=>`${t} → ${f(t)}`).join("<br>")}const d=document.getElementById("error-demo");if(d){const r=["NOT_FOUND","NOT_ALLOWED","QUOTA_EXCEEDED"];d.innerHTML=r.map(t=>`${t}: ${m[t]}`).join("<br>")}console.log("@mikesaintsg/filesystem showcase loaded");</script>
+  <style rel="stylesheet" crossorigin>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.6;min-height:100vh}.showcase{max-width:800px;margin:0 auto;padding:2rem}header{text-align:center;margin-bottom:3rem}header h1{font-size:2rem;color:#58a6ff;margin-bottom:.5rem}.tagline{color:#8b949e;font-size:1.1rem}section{margin-bottom:2.5rem}h2{color:#f0f6fc;font-size:1.3rem;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid #21262d}h3{color:#c9d1d9;font-size:1rem;margin-bottom:.5rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}.card{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:1rem}.status{display:inline-block;margin-top:.5rem;font-size:.9rem}.status.supported{color:#3fb950}.status.unsupported{color:#f85149}.demo-area{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:1.5rem}.demo-area ul{margin:1rem 0 0 1.5rem}.demo-area li{margin-bottom:.5rem}code{display:block;font-family:SF Mono,SFMono-Regular,Consolas,monospace;font-size:.85rem;color:#8b949e;line-height:1.8}footer{text-align:center;color:#8b949e;font-size:.9rem;margin-top:3rem;padding-top:1.5rem;border-top:1px solid #21262d}</style>
+</head>
+<body>
+<div id="app"></div>
+</body>
+</html>
