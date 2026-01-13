@@ -2,7 +2,7 @@
 
 > **A comprehensive guide to making `@mikesaintsg/filesystem` adapter-based while keeping the exact same API**
 
-This guide provides a complete implementation plan for refactoring the filesystem library to support pluggable storage adapters. The public API remains **exactly the same** — developers only provide an adapter in the options and everything works seamlessly.
+This guide provides a complete implementation plan for refactoring the filesystem library to support pluggable storage adapters. The public API remains **exactly the same** — developers provide an adapter instance in the options and everything works seamlessly.
 
 ---
 
@@ -13,11 +13,12 @@ This guide provides a complete implementation plan for refactoring the filesyste
 3. [Architecture](#architecture)
 4. [The Adapter Contract](#the-adapter-contract)
 5. [Type Definitions](#type-definitions)
-6. [Adapter Implementations](#adapter-implementations)
-7. [FileSystem Integration](#filesystem-integration)
-8. [Usage Examples](#usage-examples)
-9. [Implementation Phases](#implementation-phases)
-10. [File Structure](#file-structure)
+6. [Built-in Adapters](#built-in-adapters)
+7. [Custom Adapters](#custom-adapters)
+8. [FileSystem Integration](#filesystem-integration)
+9. [Usage Examples](#usage-examples)
+10. [Implementation Phases](#implementation-phases)
+11. [File Structure](#file-structure)
 
 ---
 
@@ -32,23 +33,25 @@ The current implementation is tightly coupled to OPFS. When OPFS is unavailable 
 Refactor to an **adapter pattern** where:
 
 1. The **entire public API stays exactly the same** (`FileSystemInterface`, `FileInterface`, `DirectoryInterface`, `WritableFileInterface`)
-2. All storage operations are delegated to internal adapters
-3. Developers only need to provide an adapter in the options
+2. All storage operations are delegated to adapter instances
+3. Developers provide an adapter instance in the options: `{ adapter: new IndexedDBAdapter() }`
 4. All adapters (OPFS, IndexedDB, Memory) support **all the same methods** with **identical parameters and return types**
-5. `export()` and `import()` methods are added to the `FileSystemInterface` for migration
+5. Developers can create and plug in their own custom adapters
+6. `export()` and `import()` methods are added to the `FileSystemInterface` for migration
 
 ### Key Principle
 
-**Zero API changes.** The filesystem API remains identical. Adapters are internal implementation details — developers just pick one via options and everything works.
+**Zero API changes. Full extensibility.** The filesystem API remains identical. Adapters are provided as instances, allowing developers to create their own.
 
 ```typescript
 // BEFORE (current implementation) - works exactly the same
 const fs = await createFileSystem()
 
-// AFTER (with adapter support) - same API, just provide adapter in options
-const fs = await createFileSystem()  // OPFS (default)
-const fs = await createFileSystem({ adapter: 'indexeddb' })
-const fs = await createFileSystem({ adapter: 'memory' })
+// AFTER (with adapter support) - provide adapter instance in options
+const fs = await createFileSystem()                                    // OPFS (default)
+const fs = await createFileSystem({ adapter: new IndexedDBAdapter() }) // IndexedDB
+const fs = await createFileSystem({ adapter: new MemoryAdapter() })    // In-memory
+const fs = await createFileSystem({ adapter: new MyCustomAdapter() })  // Custom!
 ```
 
 ---
@@ -58,8 +61,9 @@ const fs = await createFileSystem({ adapter: 'memory' })
 | Goal | Description |
 |------|-------------|
 | **Identical API** | Zero changes to `FileInterface`, `DirectoryInterface`, `WritableFileInterface` |
-| **Seamless Swap** | Change one option to switch storage backends |
-| **Uniform Adapters** | All adapters implement the exact same internal contract |
+| **Instance-Based** | Adapters are provided as instances: `new IndexedDBAdapter()` |
+| **Extensible** | Developers can create custom adapters implementing `StorageAdapterInterface` |
+| **Uniform Contract** | All adapters implement the exact same interface with identical signatures |
 | **Type Safety** | All adapters take the same parameters and return the same types |
 | **Migration Support** | `export()` and `import()` methods on `FileSystemInterface` for data portability |
 
@@ -76,27 +80,38 @@ const fs = await createFileSystem({ adapter: 'memory' })
 │  WritableFileInterface, SyncAccessHandleInterface           │
 │  (UNCHANGED - exact same methods, parameters, return types) │
 ├─────────────────────────────────────────────────────────────┤
-│                 Internal Adapter Layer                      │
-│         (Hidden from developers - just an option)           │
+│                 Adapter Layer                               │
+│   Adapters provided as instances via options                │
 ├──────────────────┬──────────────────┬───────────────────────┤
 │   OPFSAdapter    │  IndexedDBAdapter │   MemoryAdapter      │
 │   (default)      │  (fallback)       │   (testing/temp)     │
-└──────────────────┴──────────────────┴───────────────────────┘
+├──────────────────┴──────────────────┴───────────────────────┤
+│                 Custom Adapters                             │
+│   Developers can create their own by implementing           │
+│   StorageAdapterInterface                                   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### How It Works
 
 1. Developer calls `createFileSystem(options?)`
-2. If `options.adapter` is provided, use that adapter
-3. If not, default to OPFS adapter
+2. If `options.adapter` is provided, use that adapter instance
+3. If not, default to `new OPFSAdapter()`
 4. The returned `FileSystemInterface` works **exactly the same** regardless of adapter
 5. All `FileInterface`, `DirectoryInterface`, etc. work identically
 
 ```typescript
+import { 
+  createFileSystem, 
+  OPFSAdapter, 
+  IndexedDBAdapter, 
+  MemoryAdapter 
+} from '@mikesaintsg/filesystem'
+
 // All of these produce the EXACT SAME API
-const fs1 = await createFileSystem()                          // OPFS (default)
-const fs2 = await createFileSystem({ adapter: 'indexeddb' })  // IndexedDB
-const fs3 = await createFileSystem({ adapter: 'memory' })     // In-memory
+const fs1 = await createFileSystem()                                    // OPFS (default)
+const fs2 = await createFileSystem({ adapter: new IndexedDBAdapter() }) // IndexedDB
+const fs3 = await createFileSystem({ adapter: new MemoryAdapter() })    // In-memory
 
 // Same operations work on all:
 const root = await fs1.getRoot()
@@ -110,7 +125,7 @@ console.log(await file.getText())  // "Hello, World!"
 
 ## The Adapter Contract
 
-All adapters implement the **exact same internal interface**. They are interchangeable — the public API doesn't know or care which adapter is being used.
+All adapters implement the **exact same interface**. They are interchangeable — the public API doesn't know or care which adapter is being used. Developers can also create their own adapters by implementing this interface.
 
 ### StorageAdapterInterface
 
@@ -118,9 +133,11 @@ Every adapter implements this interface with **identical method signatures**:
 
 ```typescript
 /**
- * Internal storage adapter interface.
+ * Storage adapter interface for pluggable backends.
+ * 
  * All adapters implement this exact contract.
  * All methods take the same parameters and return the same types.
+ * Developers can create custom adapters by implementing this interface.
  */
 export interface StorageAdapterInterface {
 /** Storage backend type identifier */
@@ -271,10 +288,10 @@ The key insight is that **every adapter method has identical signatures**:
 | `importData` | `(data: ExportedFileSystem, options?: ImportOptions)` | `Promise<void>` |
 
 This means:
-- ✅ Swap adapters without changing any code
+- ✅ Swap adapters by providing a different instance
 - ✅ All adapters work identically
 - ✅ Type safety guaranteed
-- ✅ No adapter-specific classes or methods exposed
+- ✅ Create your own custom adapters
 
 
 ---
@@ -287,7 +304,7 @@ All types go in `src/types.ts` following the types-first development flow.
 
 ```typescript
 /** Storage backend type identifier */
-export type StorageBackend = 'opfs' | 'indexeddb' | 'memory'
+export type StorageBackend = 'opfs' | 'indexeddb' | 'memory' | string
 ```
 
 ### FileSystem Options (Updated)
@@ -296,10 +313,19 @@ export type StorageBackend = 'opfs' | 'indexeddb' | 'memory'
 /** Options for creating a file system instance */
 export interface FileSystemOptions {
 /**
- * Storage adapter to use.
- * @default 'opfs'
+ * Storage adapter instance to use.
+ * If not provided, defaults to OPFSAdapter.
+ * 
+ * @example
+ * ```ts
+ * // Use IndexedDB adapter
+ * { adapter: new IndexedDBAdapter() }
+ * 
+ * // Use custom adapter
+ * { adapter: new MyCustomAdapter() }
+ * ```
  */
-readonly adapter?: StorageBackend | StorageAdapterInterface
+readonly adapter?: StorageAdapterInterface
 }
 ```
 
@@ -412,15 +438,21 @@ close(): void
 
 ---
 
-## Adapter Implementations
+## Built-in Adapters
 
-All three adapters implement the **exact same `StorageAdapterInterface`** with identical method signatures.
+The library provides three built-in adapters that all implement `StorageAdapterInterface` with identical method signatures.
 
-### OPFS Adapter (Default)
+### OPFSAdapter (Default)
 
 ```typescript
 // src/adapters/OPFSAdapter.ts
 
+import type { StorageAdapterInterface, StorageBackend } from '../types.js'
+
+/**
+ * OPFS adapter using Origin Private File System.
+ * This is the default adapter.
+ */
 export class OPFSAdapter implements StorageAdapterInterface {
 readonly type: StorageBackend = 'opfs'
 #root: FileSystemDirectoryHandle | null = null
@@ -443,7 +475,7 @@ close(): void {
 this.#root = null
 }
 
-// All file operations use native OPFS APIs
+// All methods use native OPFS APIs
 async getFileText(path: string): Promise<string> {
 const handle = await this.#resolveFileHandle(path)
 const file = await handle.getFile()
@@ -505,13 +537,18 @@ async importData(data: ExportedFileSystem, options?: ImportOptions): Promise<voi
 }
 ```
 
-### IndexedDB Adapter
+### IndexedDBAdapter
 
 ```typescript
 // src/adapters/IndexedDBAdapter.ts
 
 import { createDatabase } from '@mikesaintsg/indexeddb'
+import type { StorageAdapterInterface, StorageBackend } from '../types.js'
 
+/**
+ * IndexedDB adapter for fallback storage.
+ * Uses @mikesaintsg/indexeddb for simplified database operations.
+ */
 export class IndexedDBAdapter implements StorageAdapterInterface {
 readonly type: StorageBackend = 'indexeddb'
 #db: DatabaseInterface | null = null
@@ -578,7 +615,6 @@ return entries.map(e => ({ name: e.name, kind: e.kind, handle: null }))
 }
 
 async getQuota(): Promise<StorageQuota> {
-// IndexedDB quota estimation
 if (navigator.storage?.estimate) {
 const estimate = await navigator.storage.estimate()
 return { usage: estimate.usage ?? 0, quota: estimate.quota ?? 0, available: (estimate.quota ?? 0) - (estimate.usage ?? 0), percentUsed: 0 }
@@ -598,11 +634,17 @@ async importData(data: ExportedFileSystem, options?: ImportOptions): Promise<voi
 }
 ```
 
-### Memory Adapter
+### MemoryAdapter
 
 ```typescript
 // src/adapters/MemoryAdapter.ts
 
+import type { StorageAdapterInterface, StorageBackend } from '../types.js'
+
+/**
+ * In-memory adapter for testing and temporary storage.
+ * Data is lost when the adapter is closed or page is refreshed.
+ */
 export class MemoryAdapter implements StorageAdapterInterface {
 readonly type: StorageBackend = 'memory'
 #entries = new Map<string, MemoryEntry>()
@@ -666,7 +708,6 @@ return entries
 }
 
 async getQuota(): Promise<StorageQuota> {
-// Estimate memory usage
 let size = 0
 for (const entry of this.#entries.values()) {
 if (entry.kind === 'file') size += entry.content.byteLength
@@ -688,12 +729,157 @@ async importData(data: ExportedFileSystem, options?: ImportOptions): Promise<voi
 
 ### Adapter Uniformity Summary
 
-All three adapters:
+All three built-in adapters:
 - ✅ Implement **identical** `StorageAdapterInterface`
 - ✅ Have **same method names**
 - ✅ Take **same parameters**
 - ✅ Return **same types**
-- ✅ Can be swapped without any code changes
+- ✅ Can be swapped by providing a different instance
+
+
+---
+
+## Custom Adapters
+
+Developers can create their own adapters by implementing `StorageAdapterInterface`. This enables integration with any storage backend.
+
+### Creating a Custom Adapter
+
+```typescript
+import type { StorageAdapterInterface, StorageBackend } from '@mikesaintsg/filesystem'
+
+/**
+ * Custom adapter for cloud storage (example).
+ */
+export class CloudStorageAdapter implements StorageAdapterInterface {
+readonly type: StorageBackend = 'cloud'
+#apiClient: CloudAPIClient
+
+constructor(config: CloudConfig) {
+this.#apiClient = new CloudAPIClient(config)
+}
+
+async isAvailable(): Promise<boolean> {
+try {
+await this.#apiClient.ping()
+return true
+} catch {
+return false
+}
+}
+
+async init(): Promise<void> {
+await this.#apiClient.connect()
+}
+
+close(): void {
+this.#apiClient.disconnect()
+}
+
+// Implement all required methods with SAME signatures
+async getFileText(path: string): Promise<string> {
+const response = await this.#apiClient.get(path)
+return response.text()
+}
+
+async getFileArrayBuffer(path: string): Promise<ArrayBuffer> {
+const response = await this.#apiClient.get(path)
+return response.arrayBuffer()
+}
+
+async getFileBlob(path: string): Promise<Blob> {
+const response = await this.#apiClient.get(path)
+return response.blob()
+}
+
+async getFileMetadata(path: string): Promise<FileMetadata> {
+return this.#apiClient.getMetadata(path)
+}
+
+async writeFile(path: string, data: WriteData, options?: WriteOptions): Promise<void> {
+await this.#apiClient.put(path, data, options)
+}
+
+async appendFile(path: string, data: WriteData): Promise<void> {
+await this.#apiClient.append(path, data)
+}
+
+async truncateFile(path: string, size: number): Promise<void> {
+await this.#apiClient.truncate(path, size)
+}
+
+async hasFile(path: string): Promise<boolean> {
+return this.#apiClient.exists(path, 'file')
+}
+
+async removeFile(path: string): Promise<void> {
+await this.#apiClient.delete(path)
+}
+
+async createDirectory(path: string): Promise<void> {
+await this.#apiClient.mkdir(path)
+}
+
+async hasDirectory(path: string): Promise<boolean> {
+return this.#apiClient.exists(path, 'directory')
+}
+
+async removeDirectory(path: string, options?: RemoveDirectoryOptions): Promise<void> {
+await this.#apiClient.rmdir(path, options)
+}
+
+async listEntries(path: string): Promise<readonly DirectoryEntry[]> {
+return this.#apiClient.list(path)
+}
+
+async getQuota(): Promise<StorageQuota> {
+return this.#apiClient.getQuota()
+}
+
+async exportData(options?: ExportOptions): Promise<ExportedFileSystem> {
+// Export from cloud storage
+// ... implementation
+}
+
+async importData(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
+// Import to cloud storage
+// ... implementation
+}
+}
+```
+
+### Using a Custom Adapter
+
+```typescript
+import { createFileSystem } from '@mikesaintsg/filesystem'
+import { CloudStorageAdapter } from './CloudStorageAdapter.js'
+
+// Use custom adapter just like built-in ones
+const fs = await createFileSystem({
+adapter: new CloudStorageAdapter({
+endpoint: 'https://api.mycloud.com',
+apiKey: 'my-api-key',
+})
+})
+
+// Same API works!
+const root = await fs.getRoot()
+const file = await root.createFile('document.txt')
+await file.write('Hello from the cloud!')
+```
+
+### Adapter Checklist
+
+When creating a custom adapter, ensure:
+
+- [ ] `type` property returns a unique `StorageBackend` identifier
+- [ ] `isAvailable()` correctly detects if the backend is accessible
+- [ ] `init()` properly initializes resources
+- [ ] `close()` releases all resources
+- [ ] All file operations use exact same method signatures
+- [ ] All directory operations use exact same method signatures
+- [ ] `exportData()` and `importData()` work correctly for migration
+- [ ] Errors are thrown using the library's error types (`NotFoundError`, etc.)
 
 
 ---
@@ -735,7 +921,6 @@ this.#adapter.close()
 // ============ EXISTING METHODS (delegate to adapter) ============
 
 async getRoot(): Promise<DirectoryInterface> {
-// Return a Directory that uses the adapter
 return new Directory(this.#adapter, '/')
 }
 
@@ -749,7 +934,7 @@ return this.#adapter.getQuota()
 
 ### Updated Directory Class
 
-The `Directory` class now delegates to the adapter:
+The `Directory` class delegates to the adapter:
 
 ```typescript
 // src/core/directory/Directory.ts
@@ -769,7 +954,7 @@ return this.#path.split('/').pop() ?? ''
 
 async createFile(name: string): Promise<FileInterface> {
 const filePath = this.#joinPath(name)
-await this.#adapter.writeFile(filePath, '')  // Create empty file
+await this.#adapter.writeFile(filePath, '')
 return new File(this.#adapter, filePath)
 }
 
@@ -800,7 +985,7 @@ yield entry
 
 ### Updated File Class
 
-The `File` class now delegates to the adapter:
+The `File` class delegates to the adapter:
 
 ```typescript
 // src/core/file/File.ts
@@ -852,13 +1037,11 @@ return this.#adapter.truncateFile(this.#path, size)
 // src/factories.ts
 
 import { OPFSAdapter } from './adapters/OPFSAdapter.js'
-import { IndexedDBAdapter } from './adapters/IndexedDBAdapter.js'
-import { MemoryAdapter } from './adapters/MemoryAdapter.js'
 
 /**
  * Creates a file system interface.
  * 
- * @param options - Options including adapter selection
+ * @param options - Options including adapter instance
  * @returns Promise resolving to FileSystemInterface
  *
  * @example
@@ -866,27 +1049,19 @@ import { MemoryAdapter } from './adapters/MemoryAdapter.js'
  * // Default (OPFS)
  * const fs = await createFileSystem()
  *
- * // IndexedDB fallback
- * const fs = await createFileSystem({ adapter: 'indexeddb' })
+ * // IndexedDB
+ * const fs = await createFileSystem({ adapter: new IndexedDBAdapter() })
  *
- * // In-memory (testing)
- * const fs = await createFileSystem({ adapter: 'memory' })
+ * // In-memory
+ * const fs = await createFileSystem({ adapter: new MemoryAdapter() })
+ *
+ * // Custom adapter
+ * const fs = await createFileSystem({ adapter: new MyCustomAdapter() })
  * ```
  */
 export async function createFileSystem(options?: FileSystemOptions): Promise<FileSystemInterface> {
-// Resolve adapter
-let adapter: StorageAdapterInterface
-
-if (!options?.adapter || options.adapter === 'opfs') {
-adapter = new OPFSAdapter()
-} else if (options.adapter === 'indexeddb') {
-adapter = new IndexedDBAdapter()
-} else if (options.adapter === 'memory') {
-adapter = new MemoryAdapter()
-} else {
-// Custom adapter instance provided
-adapter = options.adapter
-}
+// Use provided adapter or default to OPFS
+const adapter = options?.adapter ?? new OPFSAdapter()
 
 // Verify availability
 const available = await adapter.isAvailable()
@@ -917,17 +1092,27 @@ await file.write('Hello, World!')
 console.log(await file.getText())  // "Hello, World!"
 ```
 
-### Switching Adapters
+### Using Different Adapters
 
 ```typescript
-// IndexedDB fallback
-const fs = await createFileSystem({ adapter: 'indexeddb' })
+import { 
+createFileSystem, 
+OPFSAdapter,
+IndexedDBAdapter, 
+MemoryAdapter 
+} from '@mikesaintsg/filesystem'
 
-// In-memory (useful for testing)
-const fs = await createFileSystem({ adapter: 'memory' })
+// OPFS (default)
+const fs1 = await createFileSystem()
 
-// All operations work EXACTLY the same:
-const root = await fs.getRoot()
+// IndexedDB - provide adapter instance
+const fs2 = await createFileSystem({ adapter: new IndexedDBAdapter() })
+
+// In-memory - useful for testing
+const fs3 = await createFileSystem({ adapter: new MemoryAdapter() })
+
+// All operations work EXACTLY the same on all adapters:
+const root = await fs2.getRoot()
 const dir = await root.createDirectory('documents')
 const file = await dir.createFile('notes.md')
 await file.write('# My Notes')
@@ -936,13 +1121,15 @@ await file.write('# My Notes')
 ### Migration Between Adapters
 
 ```typescript
-// Export from one adapter
-const oldFS = await createFileSystem({ adapter: 'indexeddb' })
+import { createFileSystem, IndexedDBAdapter, OPFSAdapter } from '@mikesaintsg/filesystem'
+
+// Export from IndexedDB
+const oldFS = await createFileSystem({ adapter: new IndexedDBAdapter() })
 const exported = await oldFS.export()
 oldFS.close()
 
-// Import to another adapter
-const newFS = await createFileSystem({ adapter: 'opfs' })
+// Import to OPFS
+const newFS = await createFileSystem({ adapter: new OPFSAdapter() })
 await newFS.import(exported, { mode: 'replace' })
 
 // All data is now in OPFS!
@@ -951,17 +1138,19 @@ await newFS.import(exported, { mode: 'replace' })
 ### Automatic Fallback Pattern
 
 ```typescript
+import { createFileSystem, OPFSAdapter, IndexedDBAdapter } from '@mikesaintsg/filesystem'
+
 async function initFileSystem(): Promise<FileSystemInterface> {
 // Try OPFS first
-try {
-const fs = await createFileSystem({ adapter: 'opfs' })
+const opfsAdapter = new OPFSAdapter()
+if (await opfsAdapter.isAvailable()) {
 console.log('Using OPFS')
-return fs
-} catch {
+return createFileSystem({ adapter: opfsAdapter })
+}
+
 // Fall back to IndexedDB
 console.log('OPFS unavailable, using IndexedDB')
-return createFileSystem({ adapter: 'indexeddb' })
-}
+return createFileSystem({ adapter: new IndexedDBAdapter() })
 }
 
 // Usage - same API regardless of backend!
@@ -972,12 +1161,16 @@ const root = await fs.getRoot()
 ### Migration on Startup
 
 ```typescript
+import { createFileSystem, OPFSAdapter, IndexedDBAdapter } from '@mikesaintsg/filesystem'
+
 async function initWithMigration(): Promise<FileSystemInterface> {
-const opfsAvailable = await new OPFSAdapter().isAvailable()
+const opfsAdapter = new OPFSAdapter()
+const opfsAvailable = await opfsAdapter.isAvailable()
 
 if (opfsAvailable) {
 // Check if we have old IndexedDB data
-const idbFS = await createFileSystem({ adapter: 'indexeddb' })
+const idbAdapter = new IndexedDBAdapter()
+const idbFS = await createFileSystem({ adapter: idbAdapter })
 const idbRoot = await idbFS.getRoot()
 const entries = await idbRoot.list()
 
@@ -989,7 +1182,7 @@ onProgress: (p) => console.log(`Exporting: ${p.current}/${p.total}`)
 })
 idbFS.close()
 
-const opfsFS = await createFileSystem({ adapter: 'opfs' })
+const opfsFS = await createFileSystem({ adapter: opfsAdapter })
 await opfsFS.import(exported, {
 mode: 'replace',
 onProgress: (p) => console.log(`Importing: ${p.phase} ${p.current}/${p.total}`)
@@ -1001,17 +1194,37 @@ return opfsFS
 }
 
 idbFS.close()
-return createFileSystem({ adapter: 'opfs' })
+return createFileSystem({ adapter: opfsAdapter })
 }
 
-return createFileSystem({ adapter: 'indexeddb' })
+return createFileSystem({ adapter: new IndexedDBAdapter() })
 }
+```
+
+### Using a Custom Adapter
+
+```typescript
+import { createFileSystem } from '@mikesaintsg/filesystem'
+import { S3Adapter } from './adapters/S3Adapter.js'
+
+// Use custom S3 adapter
+const fs = await createFileSystem({
+adapter: new S3Adapter({
+bucket: 'my-bucket',
+region: 'us-east-1',
+})
+})
+
+// Same API works!
+const root = await fs.getRoot()
+const file = await root.createFile('data.json')
+await file.write(JSON.stringify({ hello: 'world' }))
 ```
 
 ### Check Backend Type
 
 ```typescript
-const fs = await createFileSystem({ adapter: 'indexeddb' })
+const fs = await createFileSystem({ adapter: new IndexedDBAdapter() })
 console.log(fs.getBackendType())  // 'indexeddb'
 ```
 
@@ -1023,10 +1236,10 @@ console.log(fs.getBackendType())  // 'indexeddb'
 ### Phase 1: Type Definitions
 
 **Deliverables:**
-- [ ] Add `StorageBackend` type
+- [ ] Add `StorageBackend` type (extends to `string` for custom adapters)
 - [ ] Add `StorageAdapterInterface` with all methods
 - [ ] Add export/import types
-- [ ] Update `FileSystemOptions` to accept adapter
+- [ ] Update `FileSystemOptions` to accept adapter instance
 - [ ] Add new methods to `FileSystemInterface` (`export`, `import`, `getBackendType`, `close`)
 
 **Files:**
@@ -1035,7 +1248,7 @@ console.log(fs.getBackendType())  // 'indexeddb'
 ### Phase 2: OPFS Adapter
 
 **Deliverables:**
-- [ ] Create `OPFSAdapter` implementing `StorageAdapterInterface`
+- [ ] Create `OPFSAdapter` class implementing `StorageAdapterInterface`
 - [ ] Implement all file operations
 - [ ] Implement all directory operations
 - [ ] Implement `exportData()` and `importData()`
@@ -1046,7 +1259,7 @@ console.log(fs.getBackendType())  // 'indexeddb'
 ### Phase 3: IndexedDB Adapter
 
 **Deliverables:**
-- [ ] Create `IndexedDBAdapter` implementing `StorageAdapterInterface`
+- [ ] Create `IndexedDBAdapter` class implementing `StorageAdapterInterface`
 - [ ] Implement all file operations (same signatures as OPFS)
 - [ ] Implement all directory operations (same signatures as OPFS)
 - [ ] Implement `exportData()` and `importData()`
@@ -1057,7 +1270,7 @@ console.log(fs.getBackendType())  // 'indexeddb'
 ### Phase 4: Memory Adapter
 
 **Deliverables:**
-- [ ] Create `MemoryAdapter` implementing `StorageAdapterInterface`
+- [ ] Create `MemoryAdapter` class implementing `StorageAdapterInterface`
 - [ ] Implement all file operations (same signatures as OPFS)
 - [ ] Implement all directory operations (same signatures as OPFS)
 - [ ] Implement `exportData()` and `importData()`
@@ -1068,11 +1281,11 @@ console.log(fs.getBackendType())  // 'indexeddb'
 ### Phase 5: Core Class Refactoring
 
 **Deliverables:**
-- [ ] Update `FileSystem` to accept and use adapter
+- [ ] Update `FileSystem` to accept and use adapter instance
 - [ ] Update `Directory` to delegate to adapter
 - [ ] Update `File` to delegate to adapter
 - [ ] Update `WritableFile` to delegate to adapter
-- [ ] Update `createFileSystem()` factory function
+- [ ] Update `createFileSystem()` to accept adapter instance (default: `new OPFSAdapter()`)
 
 **Files:**
 - `src/core/filesystem/FileSystem.ts`
@@ -1100,6 +1313,7 @@ console.log(fs.getBackendType())  // 'indexeddb'
 **Deliverables:**
 - [ ] Update README with adapter usage
 - [ ] Update guides/filesystem.md with adapter documentation
+- [ ] Add custom adapter guide
 - [ ] Add migration examples
 
 **Files:**
@@ -1130,10 +1344,10 @@ src/
 │       └── FileSystem.ts     # Uses adapter internally
 ├── constants.ts
 ├── errors.ts
-├── factories.ts              # createFileSystem() with adapter option
+├── factories.ts              # createFileSystem() accepts adapter instance
 ├── globals.d.ts
 ├── helpers.ts
-├── index.ts
+├── index.ts                  # Exports adapters + StorageAdapterInterface
 └── types.ts                  # StorageAdapterInterface, new types
 ```
 
@@ -1141,22 +1355,24 @@ src/
 
 ## Summary
 
-This refactoring keeps the **exact same public API** while adding pluggable storage adapters:
+This refactoring keeps the **exact same public API** while adding pluggable storage adapters via instances:
 
 | Aspect | Before | After |
 |--------|--------|-------|
 | API | `FileSystemInterface`, `FileInterface`, etc. | **Unchanged** |
-| Factory | `createFileSystem()` | `createFileSystem(options?)` with optional `adapter` |
-| Backends | OPFS only | OPFS (default), IndexedDB, Memory |
+| Factory | `createFileSystem()` | `createFileSystem({ adapter: new XAdapter() })` |
+| Backends | OPFS only | OPFS (default), IndexedDB, Memory, Custom |
+| Extensibility | None | Implement `StorageAdapterInterface` |
 | Migration | N/A | `export()` and `import()` methods |
 
 ### Key Points
 
 1. **Identical API** — All existing code works unchanged
-2. **Simple Option** — Just provide `{ adapter: 'indexeddb' }` to switch backends
-3. **Uniform Adapters** — All adapters have identical method signatures
-4. **Type Safe** — Same parameters, same return types across all adapters
-5. **Migration Built-in** — `export()` and `import()` for data portability
+2. **Instance-Based** — Provide adapter instances: `new IndexedDBAdapter()`
+3. **Fully Extensible** — Create custom adapters by implementing `StorageAdapterInterface`
+4. **Uniform Contract** — All adapters have identical method signatures
+5. **Type Safe** — Same parameters, same return types across all adapters
+6. **Migration Built-in** — `export()` and `import()` for data portability
 
 ---
 
