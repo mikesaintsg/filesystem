@@ -1,9 +1,9 @@
 # Phase 2: Core API
 
-> **Status:** ⏳ Pending
-> **Started:** —
-> **Target:** —
-> **Depends on:** Phase 1 (Foundation) ⏳ Pending
+> **Status:** ✅ Complete
+> **Started:** 2026-01-13
+> **Completed:** 2026-01-13
+> **Depends on:** Phase 1 (Foundation) ✅ Complete
 
 ## Objective
 
@@ -13,21 +13,21 @@ Implement the core file and directory operations. By end of phase, `FileInterfac
 
 | # | Deliverable | Status | Assignee |
 |---|-------------|--------|----------|
-| 2.1 | `File` class implementing `FileInterface` | ⏳ Pending | — |
-| 2.2 | `Directory` class implementing `DirectoryInterface` | ⏳ Pending | — |
-| 2.3 | `WritableFile` class implementing `WritableFileInterface` | ⏳ Pending | — |
-| 2.4 | `SyncAccessHandle` class implementing `SyncAccessHandleInterface` | ⏳ Pending | — |
-| 2.5 | Factory functions: `fromFileHandle()`, `fromDirectoryHandle()` | ⏳ Pending | — |
-| 2.6 | Unit tests for File class | ⏳ Pending | — |
-| 2.7 | Unit tests for Directory class | ⏳ Pending | — |
-| 2.8 | Unit tests for WritableFile class | ⏳ Pending | — |
+| 2.1 | `File` class implementing `FileInterface` | ✅ Done | — |
+| 2.2 | `Directory` class implementing `DirectoryInterface` | ✅ Done | — |
+| 2.3 | `WritableFile` class implementing `WritableFileInterface` | ✅ Done | — |
+| 2.4 | `SyncAccessHandle` class implementing `SyncAccessHandleInterface` | ✅ Done | — |
+| 2.5 | Factory functions: `fromFileHandle()`, `fromDirectoryHandle()` | ✅ Done | — |
+| 2.6 | Unit tests for File class | ✅ Done | — |
+| 2.7 | Unit tests for Directory class | ✅ Done | — |
+| 2.8 | Unit tests for WritableFile class | ✅ Done | — |
 
 **Status Legend:**
 - ✅ Done
 - 🔄 Active
 - ⏳ Pending
 
-## Current Focus: 2.1 File Implementation
+## Current Focus: Complete
 
 ### Requirements
 

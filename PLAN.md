@@ -1,8 +1,8 @@
 # Project Plan: @mikesaintsg/filesystem
 
-> **Status:** Phase 1 of 4 — Foundation (Complete)
+> **Status:** Phase 2 of 4 — Core API (Complete)
 > **Last Updated:** 2026-01-13
-> **Next Milestone:** Phase 2 - Core API Implementation
+> **Next Milestone:** Phase 3 - Integration (FileSystemInterface)
 
 ## Vision
 
@@ -61,7 +61,7 @@ Explicit boundaries. What we are NOT building:
 | # | Phase | Status | Description |
 |---|-------|--------|-------------|
 | 1 | Foundation | ✅ Complete | Types, project structure, error classes |
-| 2 | Core API | ⏳ Pending | FileInterface, DirectoryInterface, WritableFileInterface |
+| 2 | Core API | ✅ Complete | FileInterface, DirectoryInterface, WritableFileInterface |
 | 3 | Integration | ⏳ Pending | FileSystemInterface, pickers, drag-drop, File API |
 | 4 | Polish | ⏳ Pending | Docs, showcase, edge cases, comprehensive tests |
 

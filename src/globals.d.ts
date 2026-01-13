@@ -15,14 +15,22 @@ declare global {
 		write(buffer: ArrayBufferView, options?: { at?: number }): number
 	}
 
+	interface FileSystemHandlePermissionDescriptor {
+		mode?: 'read' | 'readwrite'
+	}
+
 	interface FileSystemFileHandle {
 		createSyncAccessHandle(): Promise<FileSystemSyncAccessHandle>
+		queryPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>
+		requestPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>
 	}
 
 	interface FileSystemDirectoryHandle {
 		entries(): AsyncIterableIterator<[string, FileSystemHandle]>
 		keys(): AsyncIterableIterator<string>
 		values(): AsyncIterableIterator<FileSystemHandle>
+		queryPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>
+		requestPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>
 	}
 
 	// File System Access API picker functions (Chromium only)

@@ -8,9 +8,15 @@ import type {
 	FileSystemInterface,
 	FileInterface,
 	DirectoryInterface,
+	WritableFileInterface,
+	SyncAccessHandleInterface,
 } from './types.js'
 import { NotSupportedError } from './errors.js'
 import { isOPFSSupported } from './helpers.js'
+import { File } from './core/file/File.js'
+import { Directory } from './core/directory/Directory.js'
+import { WritableFile } from './core/file/WritableFile.js'
+import { SyncAccessHandle } from './core/file/SyncAccessHandle.js'
 
 /**
  * Creates a file system interface.
@@ -48,9 +54,8 @@ export function createFileSystem(): Promise<FileSystemInterface> {
  * console.log(await file.getText())
  * ```
  */
-export function fromFileHandle(_handle: FileSystemFileHandle): FileInterface {
-	// TODO: Implement File class in Phase 2
-	throw new NotSupportedError('File implementation pending - Phase 2')
+export function fromFileHandle(handle: FileSystemFileHandle): FileInterface {
+	return new File(handle)
 }
 
 /**
@@ -68,7 +73,43 @@ export function fromFileHandle(_handle: FileSystemFileHandle): FileInterface {
  * }
  * ```
  */
-export function fromDirectoryHandle(_handle: FileSystemDirectoryHandle): DirectoryInterface {
-	// TODO: Implement Directory class in Phase 2
-	throw new NotSupportedError('Directory implementation pending - Phase 2')
+export function fromDirectoryHandle(handle: FileSystemDirectoryHandle): DirectoryInterface {
+	return new Directory(handle)
+}
+
+/**
+ * Creates a WritableFileInterface from a native FileSystemWritableFileStream.
+ *
+ * @param stream - Native writable file stream
+ * @returns WritableFileInterface wrapper
+ *
+ * @example
+ * ```ts
+ * const nativeStream = await fileHandle.createWritable()
+ * const writable = fromWritableStream(nativeStream)
+ * await writable.write('Hello')
+ * await writable.close()
+ * ```
+ */
+export function fromWritableStream(stream: FileSystemWritableFileStream): WritableFileInterface {
+	return new WritableFile(stream)
+}
+
+/**
+ * Creates a SyncAccessHandleInterface from a native FileSystemSyncAccessHandle.
+ *
+ * @param handle - Native sync access handle
+ * @returns SyncAccessHandleInterface wrapper
+ *
+ * @example
+ * ```ts
+ * // In a Web Worker
+ * const nativeHandle = await fileHandle.createSyncAccessHandle()
+ * const syncHandle = fromSyncAccessHandle(nativeHandle)
+ * const size = syncHandle.getSize()
+ * syncHandle.close()
+ * ```
+ */
+export function fromSyncAccessHandle(handle: FileSystemSyncAccessHandle): SyncAccessHandleInterface {
+	return new SyncAccessHandle(handle)
 }
