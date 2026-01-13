@@ -16,14 +16,14 @@ describe('FileSystem', () => {
 	let testDir: DirectoryInterface
 	let testDirName: string
 
-	beforeEach(async () => {
+	beforeEach(async() => {
 		fs = await createFileSystem()
 		const root = await fs.getRoot()
 		testDirName = uniqueTestDir()
 		testDir = await root.createDirectory(testDirName)
 	})
 
-	afterEach(async () => {
+	afterEach(async() => {
 		const nativeRoot = await getTestRoot()
 		try {
 			await nativeRoot.removeEntry(testDirName, { recursive: true })
@@ -33,20 +33,20 @@ describe('FileSystem', () => {
 	})
 
 	describe('createFileSystem()', () => {
-		it('creates a file system instance', async () => {
+		it('creates a file system instance', async() => {
 			const newFs = await createFileSystem()
 			expect(newFs).toBeDefined()
 		})
 	})
 
 	describe('getRoot()', () => {
-		it('returns OPFS root directory', async () => {
+		it('returns OPFS root directory', async() => {
 			const root = await fs.getRoot()
 			expect(root).toBeDefined()
 			expect(root.getName()).toBe('')
 		})
 
-		it('returns same root on multiple calls', async () => {
+		it('returns same root on multiple calls', async() => {
 			const root1 = await fs.getRoot()
 			const root2 = await fs.getRoot()
 			expect(await root1.isSameEntry(root2)).toBe(true)
@@ -54,7 +54,7 @@ describe('FileSystem', () => {
 	})
 
 	describe('getQuota()', () => {
-		it('returns storage quota information', async () => {
+		it('returns storage quota information', async() => {
 			const quota = await fs.getQuota()
 			expect(typeof quota.usage).toBe('number')
 			expect(typeof quota.quota).toBe('number')
@@ -62,12 +62,12 @@ describe('FileSystem', () => {
 			expect(typeof quota.percentUsed).toBe('number')
 		})
 
-		it('has available = quota - usage', async () => {
+		it('has available = quota - usage', async() => {
 			const quota = await fs.getQuota()
 			expect(quota.available).toBe(quota.quota - quota.usage)
 		})
 
-		it('updates usage after writing file', async () => {
+		it('updates usage after writing file', async() => {
 			const quotaBefore = await fs.getQuota()
 
 			// Write some data
@@ -94,7 +94,7 @@ describe('FileSystem', () => {
 	})
 
 	describe('fromFile()', () => {
-		it('wraps a File object', async () => {
+		it('wraps a File object', async() => {
 			const nativeFile = createTestFile('Hello, World!', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 
@@ -102,7 +102,7 @@ describe('FileSystem', () => {
 			expect(await file.getText()).toBe('Hello, World!')
 		})
 
-		it('returns read-only file', async () => {
+		it('returns read-only file', async() => {
 			const nativeFile = createTestFile('content', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 
@@ -110,7 +110,7 @@ describe('FileSystem', () => {
 			await expect(file.write('new content')).rejects.toThrow(NotSupportedError)
 		})
 
-		it('preserves file metadata', async () => {
+		it('preserves file metadata', async() => {
 			const nativeFile = createTestFile('Hello', 'document.txt', 'text/plain')
 			const file = await fs.fromFile(nativeFile)
 
@@ -122,7 +122,7 @@ describe('FileSystem', () => {
 	})
 
 	describe('fromFiles()', () => {
-		it('wraps a FileList', async () => {
+		it('wraps a FileList', async() => {
 			// Create a FileList-like object (DataTransfer can create real FileLists)
 			const dt = new DataTransfer()
 			dt.items.add(new File(['content1'], 'file1.txt'))
@@ -135,7 +135,7 @@ describe('FileSystem', () => {
 			expect(files[1]?.getName()).toBe('file2.txt')
 		})
 
-		it('returns empty array for empty FileList', async () => {
+		it('returns empty array for empty FileList', async() => {
 			const dt = new DataTransfer()
 			const files = await fs.fromFiles(dt.files)
 			expect(files.length).toBe(0)
@@ -143,7 +143,7 @@ describe('FileSystem', () => {
 	})
 
 	describe('full workflow', () => {
-		it('creates files and directories through the API', async () => {
+		it('creates files and directories through the API', async() => {
 			// Get root
 			const root = await fs.getRoot()
 			expect(root).toBeDefined()
@@ -168,7 +168,7 @@ describe('FileSystem', () => {
 			await root.removeDirectory(workDir.getName(), { recursive: true })
 		})
 
-		it('walks directory tree', async () => {
+		it('walks directory tree', async() => {
 			// Create structure
 			await testDir.createFile('root.txt')
 			const sub = await testDir.createDirectory('sub')
@@ -187,13 +187,13 @@ describe('FileSystem', () => {
 	})
 
 	describe('File API source (ReadOnlyFile)', () => {
-		it('can read text', async () => {
+		it('can read text', async() => {
 			const nativeFile = createTestFile('Hello!', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			expect(await file.getText()).toBe('Hello!')
 		})
 
-		it('can read as ArrayBuffer', async () => {
+		it('can read as ArrayBuffer', async() => {
 			const nativeFile = createTestFile('Data', 'test.bin')
 			const file = await fs.fromFile(nativeFile)
 
@@ -201,7 +201,7 @@ describe('FileSystem', () => {
 			expect(buffer.byteLength).toBe(4)
 		})
 
-		it('can read as Blob', async () => {
+		it('can read as Blob', async() => {
 			const nativeFile = createTestFile('Blob data', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 
@@ -209,7 +209,7 @@ describe('FileSystem', () => {
 			expect(blob.size).toBe(9)
 		})
 
-		it('can get stream', async () => {
+		it('can get stream', async() => {
 			const nativeFile = createTestFile('Stream data', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 
@@ -221,49 +221,49 @@ describe('FileSystem', () => {
 			reader.releaseLock()
 		})
 
-		it('hasReadPermission returns true', async () => {
+		it('hasReadPermission returns true', async() => {
 			const nativeFile = createTestFile('test', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			expect(await file.hasReadPermission()).toBe(true)
 		})
 
-		it('hasWritePermission returns false', async () => {
+		it('hasWritePermission returns false', async() => {
 			const nativeFile = createTestFile('test', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			expect(await file.hasWritePermission()).toBe(false)
 		})
 
-		it('requestWritePermission returns false', async () => {
+		it('requestWritePermission returns false', async() => {
 			const nativeFile = createTestFile('test', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			expect(await file.requestWritePermission()).toBe(false)
 		})
 
-		it('append throws NotSupportedError', async () => {
+		it('append throws NotSupportedError', async() => {
 			const nativeFile = createTestFile('test', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			await expect(file.append('more')).rejects.toThrow(NotSupportedError)
 		})
 
-		it('truncate throws NotSupportedError', async () => {
+		it('truncate throws NotSupportedError', async() => {
 			const nativeFile = createTestFile('test', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			await expect(file.truncate(0)).rejects.toThrow(NotSupportedError)
 		})
 
-		it('openWritable throws NotSupportedError', async () => {
+		it('openWritable throws NotSupportedError', async() => {
 			const nativeFile = createTestFile('test', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			await expect(file.openWritable()).rejects.toThrow(NotSupportedError)
 		})
 
-		it('native throws NotSupportedError', async () => {
+		it('native throws NotSupportedError', async() => {
 			const nativeFile = createTestFile('test', 'test.txt')
 			const file = await fs.fromFile(nativeFile)
 			expect(() => file.native).toThrow(NotSupportedError)
 		})
 
-		it('isSameEntry compares File objects', async () => {
+		it('isSameEntry compares File objects', async() => {
 			const nativeFile1 = createTestFile('test', 'test.txt')
 			const nativeFile2 = createTestFile('test', 'test.txt')
 
