@@ -1087,15 +1087,21 @@ async function demonstrateInMemoryAdapter(): Promise<ExampleResult> {
 	const adapter = new InMemoryAdapter()
 	await adapter.init()
 
+	// Demo data
+	const settingsData = { theme: 'dark', lang: 'en' }
+	const usersData = [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }]
+	const readmeContent = '# My App\nWelcome to the app!'
+	const PREVIEW_LENGTH = 50
+
 	// Create a realistic file structure
 	await adapter.createDirectory('/app')
 	await adapter.createDirectory('/app/config')
 	await adapter.createDirectory('/app/data')
 
 	// Write files
-	await adapter.writeFile('/app/config/settings.json', JSON.stringify({ theme: 'dark', lang: 'en' }, null, 2))
-	await adapter.writeFile('/app/data/users.json', JSON.stringify([{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }], null, 2))
-	await adapter.writeFile('/app/README.md', '# My App\nWelcome to the app!')
+	await adapter.writeFile('/app/config/settings.json', JSON.stringify(settingsData, null, 2))
+	await adapter.writeFile('/app/data/users.json', JSON.stringify(usersData, null, 2))
+	await adapter.writeFile('/app/README.md', readmeContent)
 
 	// Read back content
 	const settings = await adapter.getFileText('/app/config/settings.json')
@@ -1119,8 +1125,8 @@ async function demonstrateInMemoryAdapter(): Promise<ExampleResult> {
 				'/app/config': configEntries.map(e => `📄 ${e.name}`),
 			},
 			files: {
-				settings: JSON.parse(settings),
-				readme: readme.substring(0, 50) + '...',
+				settings: JSON.parse(settings) as typeof settingsData,
+				readme: readme.substring(0, PREVIEW_LENGTH) + '...',
 			},
 			quota: {
 				usage: `${(quota.usage / 1024).toFixed(1)} KB`,
