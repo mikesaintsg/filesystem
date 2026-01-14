@@ -21,6 +21,7 @@ import type {
 	MoveOptions,
 } from '../types.js'
 import { NotFoundError, TypeMismatchError, wrapDOMException } from '../errors.js'
+import { writeDataToStream } from '../helpers.js'
 
 /**
  * OPFSAdapter - uses the Origin Private File System.
@@ -105,7 +106,7 @@ export class OPFSAdapter implements StorageAdapterInterface {
 			if (options?.position !== undefined) {
 				await writable.seek(options.position)
 			}
-			await this.#writeDataToStream(writable, data)
+			await writeDataToStream(writable, data)
 			await writable.close()
 		} catch (error) {
 			await writable.abort()
@@ -120,7 +121,7 @@ export class OPFSAdapter implements StorageAdapterInterface {
 		try {
 			const file = await handle.getFile()
 			await writable.seek(file.size)
-			await this.#writeDataToStream(writable, data)
+			await writeDataToStream(writable, data)
 			await writable.close()
 		} catch (error) {
 			await writable.abort()
@@ -353,20 +354,6 @@ export class OPFSAdapter implements StorageAdapterInterface {
 				throw new NotFoundError(path)
 			}
 			throw wrapDOMException(error, path)
-		}
-	}
-
-	async #writeDataToStream(writable: FileSystemWritableFileStream, data: WriteData): Promise<void> {
-		if (data instanceof ReadableStream) {
-			const reader = data.getReader()
-			while (true) {
-				const { done, value } = await reader.read()
-				if (done) break
-				const copy = new Uint8Array(value)
-				await writable.write(copy.buffer)
-			}
-		} else {
-			await writable.write(data)
 		}
 	}
 

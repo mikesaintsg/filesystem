@@ -7,6 +7,7 @@
 
 import type { WritableFileInterface, WriteData } from '../../types.js'
 import { wrapDOMException } from '../../errors.js'
+import { writeDataToStream } from '../../helpers.js'
 
 /**
  * Writable file implementation for streaming writes.
@@ -38,19 +39,7 @@ export class WritableFile implements WritableFileInterface {
 	 */
 	async write(data: WriteData): Promise<void> {
 		try {
-			// Handle ReadableStream separately as it's not in FileSystemWriteChunkType
-			if (data instanceof ReadableStream) {
-				const reader = data.getReader()
-				while (true) {
-					const { done, value } = await reader.read()
-					if (done) break
-					// Copy to a new Uint8Array with a plain ArrayBuffer
-					const copy = new Uint8Array(value)
-					await this.#stream.write(copy.buffer)
-				}
-			} else {
-				await this.#stream.write(data)
-			}
+			await writeDataToStream(this.#stream, data)
 		} catch (error) {
 			throw wrapDOMException(error)
 		}

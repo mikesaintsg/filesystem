@@ -19,18 +19,9 @@ import type {
 	ImportOptions,
 	CopyOptions,
 	MoveOptions,
+	MemoryEntry,
 } from '../types.js'
 import { NotFoundError, TypeMismatchError } from '../errors.js'
-
-/** Internal representation of a file or directory entry */
-interface MemoryEntry {
-	path: string
-	name: string
-	parent: string
-	kind: 'file' | 'directory'
-	content?: ArrayBuffer
-	lastModified?: number
-}
 
 /**
  * InMemoryAdapter - stores everything in memory.

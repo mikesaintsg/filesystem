@@ -89,6 +89,16 @@ export interface AdapterDirectoryEntry {
 	readonly kind: EntryKind
 }
 
+/** Internal representation of a file or directory entry for InMemoryAdapter */
+export interface MemoryEntry {
+	path: string
+	name: string
+	parent: string
+	kind: 'file' | 'directory'
+	content?: ArrayBuffer
+	lastModified?: number
+}
+
 /** Exported file entry for migration */
 export interface ExportedFileEntry {
 	readonly path: string

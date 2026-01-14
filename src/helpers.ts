@@ -260,3 +260,27 @@ export function formatBytes(bytes: number): string {
 	const size = bytes / Math.pow(1024, i)
 	return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
+
+// ============================================================================
+// Stream Helpers
+// ============================================================================
+
+/**
+ * Writes data to a writable stream, handling ReadableStream conversion
+ * @param writable - The writable stream to write to
+ * @param data - Data to write (string, BufferSource, Blob, or ReadableStream)
+ */
+export async function writeDataToStream(writable: FileSystemWritableFileStream, data: string | BufferSource | Blob | ReadableStream<Uint8Array>): Promise<void> {
+	if (data instanceof ReadableStream) {
+		const reader = data.getReader()
+		while (true) {
+			const { done, value } = await reader.read()
+			if (done) break
+			// Copy to a new Uint8Array with a plain ArrayBuffer
+			const copy = new Uint8Array(value)
+			await writable.write(copy.buffer)
+		}
+	} else {
+		await writable.write(data)
+	}
+}
