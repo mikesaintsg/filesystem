@@ -30,6 +30,7 @@ import {
 	isAbortError,
 	NotFoundError,
 	ERROR_MESSAGES,
+	InMemoryAdapter,
 } from '~/src/index.js'
 import type { FileSystemInterface, DirectoryInterface, FileInterface } from '~/src/types.js'
 
@@ -37,7 +38,7 @@ import type { FileSystemInterface, DirectoryInterface, FileInterface } from '~/s
 // App State
 // ============================================================================
 
-type TabId = 'opfs' | 'directories' | 'files' | 'streams' | 'pickers' | 'dragdrop' | 'errors'
+type TabId = 'opfs' | 'directories' | 'files' | 'streams' | 'pickers' | 'dragdrop' | 'errors' | 'adapters'
 
 let fs: FileSystemInterface | null = null
 let root: DirectoryInterface | null = null
@@ -59,6 +60,7 @@ interface TabDefinition {
 
 const TABS: readonly TabDefinition[] = [
 	{ id: 'dragdrop', emoji: '🎯', label: 'Drag & Drop', description: 'Drop files and folders - works everywhere' },
+	{ id: 'adapters', emoji: '🔌', label: 'Adapters', description: 'Pluggable storage backends - InMemory, OPFS' },
 	{ id: 'opfs', emoji: '💾', label: 'OPFS Storage', description: 'Origin Private File System - sandboxed storage for web apps' },
 	{ id: 'directories', emoji: '📁', label: 'Directories', description: 'Create nested directories, list contents, recursive walk' },
 	{ id: 'files', emoji: '📄', label: 'File Operations', description: 'Read/write text, binary, blob, stream formats' },
@@ -140,6 +142,13 @@ function getExamplesForTab(tab: TabId): readonly ExampleDefinition[] {
 				{ id: 'not-found', title: 'NotFoundError', description: 'Thrown when file/directory not found', run: demonstrateNotFoundError },
 				{ id: 'type-guards', title: 'Type Guards', description: 'Safe error type checking', run: demonstrateTypeGuards },
 				{ id: 'error-codes', title: 'Error Codes', description: 'All error code enumeration', run: demonstrateErrorCodes },
+			]
+		case 'adapters':
+			return [
+				{ id: 'inmemory', title: 'InMemoryAdapter', description: 'Create and use in-memory storage', run: demonstrateInMemoryAdapter },
+				{ id: 'copy-file', title: 'copyFile() - Copy File', description: 'Copy a file within directory', run: demonstrateCopyFile },
+				{ id: 'move-file', title: 'moveFile() - Move File', description: 'Move a file to a new location', run: demonstrateMoveFile },
+				{ id: 'export-fs', title: 'export() - Export FileSystem', description: 'Export file system to portable format', run: demonstrateExport },
 			]
 	}
 }
@@ -1067,6 +1076,178 @@ function demonstrateErrorCodes(): ExampleResult {
 // NO_MODIFICATION_ALLOWED, INVALID_STATE,
 // QUOTA_EXCEEDED, ABORT, SECURITY,
 // ENCODING, NOT_SUPPORTED`,
+	}
+}
+
+// ============================================================================
+// Adapter Demonstrations
+// ============================================================================
+
+async function demonstrateInMemoryAdapter(): Promise<ExampleResult> {
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
+
+	// Write a file
+	await adapter.writeFile('/hello.txt', 'Hello from InMemoryAdapter!')
+	const content = await adapter.getFileText('/hello.txt')
+
+	// Create a directory and list entries
+	await adapter.createDirectory('/data')
+	await adapter.writeFile('/data/config.json', '{"version": 1}')
+	const entries = await adapter.listEntries('/data')
+
+	// Get quota info
+	const quota = await adapter.getQuota()
+
+	adapter.close()
+
+	return {
+		success: true,
+		message: `InMemoryAdapter working! Content: "${content}"`,
+		data: {
+			content,
+			entries,
+			quota: { usage: quota.usage, available: quota.available },
+		},
+		code: `import { InMemoryAdapter } from '@mikesaintsg/filesystem'
+
+const adapter = new InMemoryAdapter()
+await adapter.init()
+
+await adapter.writeFile('/hello.txt', 'Hello!')
+const content = await adapter.getFileText('/hello.txt')
+
+adapter.close()`,
+	}
+}
+
+async function demonstrateCopyFile(): Promise<ExampleResult> {
+	if (!root || !opfsAvailable) {
+		return { success: false, message: 'OPFS not available' }
+	}
+
+	try {
+		const testDir = await root.createDirectory('copy-demo')
+
+		// Create source file
+		const source = await testDir.createFile('source.txt')
+		await source.write('Content to copy')
+
+		// Copy the file
+		const copy = await testDir.copyFile('source.txt', 'copy.txt')
+		const copyContent = await copy.getText()
+
+		// Verify both files exist
+		const files = await testDir.listFiles()
+
+		// Cleanup
+		await root.removeDirectory('copy-demo', { recursive: true })
+
+		return {
+			success: true,
+			message: `Copied file! Copy content: "${copyContent}"`,
+			data: { files: files.length, copyContent },
+			code: `// Copy a file to a new name
+const copy = await directory.copyFile('source.txt', 'copy.txt')
+
+// Copy to another directory
+const otherDir = await root.createDirectory('backup')
+const copy2 = await directory.copyFile('source.txt', otherDir)
+
+// Copy with overwrite option
+await directory.copyFile('source.txt', 'existing.txt', { overwrite: true })`,
+		}
+	} catch {
+		return { success: false, message: 'OPFS operation failed' }
+	}
+}
+
+async function demonstrateMoveFile(): Promise<ExampleResult> {
+	if (!root || !opfsAvailable) {
+		return { success: false, message: 'OPFS not available' }
+	}
+
+	try {
+		const testDir = await root.createDirectory('move-demo')
+
+		// Create source file
+		const source = await testDir.createFile('source.txt')
+		await source.write('Content to move')
+
+		// Move the file
+		const moved = await testDir.moveFile('source.txt', 'moved.txt')
+		const movedContent = await moved.getText()
+
+		// Verify source no longer exists
+		const sourceExists = await testDir.hasFile('source.txt')
+		const movedExists = await testDir.hasFile('moved.txt')
+
+		// Cleanup
+		await root.removeDirectory('move-demo', { recursive: true })
+
+		return {
+			success: true,
+			message: `Moved file! Content: "${movedContent}"`,
+			data: { sourceExists, movedExists },
+			code: `// Move a file to a new name
+const moved = await directory.moveFile('source.txt', 'newname.txt')
+
+// Move to another directory
+const otherDir = await root.createDirectory('archive')
+const moved2 = await directory.moveFile('file.txt', otherDir)
+
+// Move with overwrite option
+await directory.moveFile('source.txt', 'existing.txt', { overwrite: true })`,
+		}
+	} catch {
+		return { success: false, message: 'OPFS operation failed' }
+	}
+}
+
+async function demonstrateExport(): Promise<ExampleResult> {
+	if (!fs || !root || !opfsAvailable) {
+		return { success: false, message: 'OPFS not available' }
+	}
+
+	try {
+		const testDir = await root.createDirectory('export-demo')
+
+		// Create some files
+		const file1 = await testDir.createFile('readme.txt')
+		await file1.write('Hello World')
+		const subdir = await testDir.createDirectory('data')
+		const file2 = await subdir.createFile('config.json')
+		await file2.write('{"exported": true}')
+
+		// Export the file system
+		const exported = await fs.export({ includePaths: ['/export-demo'] })
+
+		// Cleanup
+		await root.removeDirectory('export-demo', { recursive: true })
+
+		return {
+			success: true,
+			message: `Exported ${exported.entries.length} entries`,
+			data: {
+				version: exported.version,
+				entryCount: exported.entries.length,
+				entries: exported.entries.map(e => ({ path: e.path, kind: e.kind })),
+			},
+			code: `// Export entire file system
+const exported = await fs.export()
+
+// Export specific paths only
+const partial = await fs.export({ includePaths: ['/data'] })
+
+// Exclude certain paths
+const filtered = await fs.export({ excludePaths: ['/temp'] })
+
+// Import into another file system
+await anotherFs.import(exported)
+await anotherFs.import(exported, { mergeBehavior: 'skip' })`,
+		}
+	} catch {
+		return { success: false, message: 'OPFS operation failed' }
 	}
 }
 

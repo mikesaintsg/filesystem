@@ -40,15 +40,16 @@ import { FileSystem } from './core/filesystem/FileSystem.js'
  * ```
  */
 export async function createFileSystem(options?: FileSystemOptions): Promise<FileSystemInterface> {
-	// If an adapter is provided, use it
+	// If an adapter is provided, validate and initialize it
+	// Note: The adapter-based FileSystem implementation is in progress.
+	// Currently, adapters are validated but the FileSystem still uses native OPFS.
+	// Future versions will support fully adapter-based operation.
 	if (options?.adapter) {
 		const adapter = options.adapter
 		if (!await adapter.isAvailable()) {
 			throw new NotSupportedError('Storage adapter is not available')
 		}
 		await adapter.init()
-		// TODO: Return adapter-based FileSystem once implemented
-		// For now, fall back to native OPFS
 	}
 
 	// Default: use native OPFS

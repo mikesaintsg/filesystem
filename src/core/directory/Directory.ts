@@ -542,9 +542,8 @@ export class Directory implements DirectoryInterface {
 	 * @param options - Move options
 	 */
 	async moveFile(source: string, destination: string | DirectoryInterface, options?: MoveOptions): Promise<FileInterface> {
-		// Copy the file first (only pass options if overwrite is explicitly set)
-		const copyOptions: CopyOptions | undefined = options?.overwrite !== undefined ? { overwrite: options.overwrite } : undefined
-		const destFile = await this.copyFile(source, destination, copyOptions)
+		// Copy the file, passing through options if provided
+		const destFile = await this.copyFile(source, destination, options)
 
 		// Remove source file
 		await this.removeFile(source)
