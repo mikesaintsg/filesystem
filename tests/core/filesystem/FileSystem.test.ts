@@ -275,4 +275,122 @@ describe('FileSystem', () => {
 			expect(await file1.isSameEntry(file2)).toBe(false)
 		})
 	})
+
+	describe('export()', () => {
+		it('exports file system entries', async() => {
+			const file = await testDir.createFile('export-test.txt')
+			await file.write('Export content')
+
+			const exported = await fs.export()
+
+			expect(exported.version).toBe(1)
+			expect(typeof exported.exportedAt).toBe('number')
+			expect(exported.entries.length).toBeGreaterThan(0)
+		})
+
+		it('exports files with content', async() => {
+			const file = await testDir.createFile('content-test.txt')
+			await file.write('Hello, World!')
+
+			const exported = await fs.export()
+			const fileEntry = exported.entries.find(e =>
+				e.kind === 'file' && e.name === 'content-test.txt',
+			)
+
+			expect(fileEntry).toBeDefined()
+			if (fileEntry?.kind === 'file') {
+				expect(fileEntry.content.byteLength).toBeGreaterThan(0)
+			}
+		})
+
+		it('respects includePaths option', async() => {
+			const includeDir = await testDir.createDirectory('include')
+			const excludeDir = await testDir.createDirectory('exclude')
+			const includeFile = await includeDir.createFile('file.txt')
+			await includeFile.write('Include me')
+			const excludeFile = await excludeDir.createFile('file.txt')
+			await excludeFile.write('Exclude me')
+
+			const includePath = `/${testDirName}/include`
+			const exported = await fs.export({ includePaths: [includePath] })
+
+			const paths = exported.entries.map(e => e.path)
+			const hasInclude = paths.some(p => p.includes('/include'))
+			const hasExclude = paths.some(p => p.includes('/exclude'))
+
+			expect(hasInclude).toBe(true)
+			expect(hasExclude).toBe(false)
+		})
+	})
+
+	describe('import()', () => {
+		it('imports file system entries', async() => {
+			const importData = {
+				version: 1,
+				exportedAt: Date.now(),
+				entries: [
+					{
+						path: `/${testDirName}/imported.txt`,
+						name: 'imported.txt',
+						kind: 'file' as const,
+						content: new TextEncoder().encode('Imported content').buffer,
+						lastModified: Date.now(),
+					},
+				],
+			}
+
+			await fs.import(importData)
+
+			const file = await testDir.getFile('imported.txt')
+			expect(file).toBeDefined()
+			expect(await file?.getText()).toBe('Imported content')
+		})
+
+		it('imports directories', async() => {
+			const importData = {
+				version: 1,
+				exportedAt: Date.now(),
+				entries: [
+					{
+						path: `/${testDirName}/imported-dir`,
+						name: 'imported-dir',
+						kind: 'directory' as const,
+					},
+				],
+			}
+
+			await fs.import(importData)
+
+			expect(await testDir.hasDirectory('imported-dir')).toBe(true)
+		})
+
+		it('skips existing files with skip merge behavior', async() => {
+			const existingFile = await testDir.createFile('existing.txt')
+			await existingFile.write('Original')
+
+			const importData = {
+				version: 1,
+				exportedAt: Date.now(),
+				entries: [
+					{
+						path: `/${testDirName}/existing.txt`,
+						name: 'existing.txt',
+						kind: 'file' as const,
+						content: new TextEncoder().encode('New').buffer,
+						lastModified: Date.now(),
+					},
+				],
+			}
+
+			await fs.import(importData, { mergeBehavior: 'skip' })
+
+			expect(await existingFile.getText()).toBe('Original')
+		})
+	})
+
+	describe('close()', () => {
+		it('closes without error', () => {
+			expect(() => fs.close()).not.toThrow()
+		})
+	})
 })

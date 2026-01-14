@@ -17,5 +17,8 @@ export * from './helpers.js'
 // Constants
 export * from './constants.js'
 
+// Storage adapters
+export * from './adapters/index.js'
+
 // Types (export all types)
 export type * from './types.js'

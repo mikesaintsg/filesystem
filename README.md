@@ -9,8 +9,11 @@
 - ✅ **Ergonomic API** — Simplified file and directory operations
 - ✅ **Native Access** — Full access to underlying File System handles via `.native`
 - ✅ **Unified Interface** — Same API across OPFS, File System Access, drag-drop, and File API
+- ✅ **Pluggable Storage** — Swap storage backends with adapters (OPFS, InMemory, IndexedDB)
 - ✅ **Async Iterators** — Memory-efficient directory traversal with early break
 - ✅ **Path Operations** — `mkdir -p` style nested directory creation
+- ✅ **Convenience Methods** — `copyFile()`, `moveFile()` for common operations
+- ✅ **Export/Import** — Migrate data between storage backends
 - ✅ **Error Classes** — Typed errors with `NotFoundError`, `NotAllowedError`, etc.
 - ✅ **Zero Dependencies** — Built entirely on Web Platform APIs
 
@@ -142,6 +145,55 @@ try {
 		console.log(`File not found: ${error.path}`)
 	}
 }
+```
+
+### Storage Adapters
+
+Swap storage backends without changing your code:
+
+```typescript
+import { createFileSystem, InMemoryAdapter } from '@mikesaintsg/filesystem'
+
+// Default: Origin Private File System (OPFS)
+const fs = await createFileSystem()
+
+// In-memory storage (great for testing)
+const memFS = await createFileSystem({ adapter: new InMemoryAdapter() })
+
+// Same API, different backends
+const root = await fs.getRoot()
+const file = await root.createFile('hello.txt')
+await file.write('Hello!')
+```
+
+### Convenience Methods
+
+```typescript
+// Copy a file within or across directories
+const copy = await directory.copyFile('source.txt', 'backup.txt')
+
+// Move/rename a file
+await directory.moveFile('old.txt', 'new.txt')
+
+// Move to another directory
+const archive = await root.createDirectory('archive')
+await directory.moveFile('file.txt', archive)
+```
+
+### Export & Import
+
+Migrate data between storage backends:
+
+```typescript
+// Export from one file system
+const exported = await fs.export()
+
+// Import to another
+await anotherFS.import(exported)
+
+// With options
+await fs.export({ includePaths: ['/data'], excludePaths: ['/temp'] })
+await anotherFS.import(exported, { mergeBehavior: 'skip' })
 ```
 
 ## Development

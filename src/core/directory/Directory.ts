@@ -12,6 +12,8 @@ import type {
 	WalkEntry,
 	WalkOptions,
 	RemoveDirectoryOptions,
+	CopyOptions,
+	MoveOptions,
 } from '../../types.js'
 import { wrapDOMException, NotFoundError, TypeMismatchError } from '../../errors.js'
 import { File } from '../file/File.js'
@@ -490,5 +492,62 @@ export class Directory implements DirectoryInterface {
 		} catch (error) {
 			throw wrapDOMException(error, this.#handle.name)
 		}
+	}
+
+	// ---- Convenience Methods ----
+
+	/**
+	 * Copies a file to a destination
+	 * @param source - Source file name
+	 * @param destination - Destination file name or directory
+	 * @param options - Copy options
+	 */
+	async copyFile(source: string, destination: string | DirectoryInterface, options?: CopyOptions): Promise<FileInterface> {
+		// Get source file
+		const sourceFile = await this.getFile(source)
+		if (!sourceFile) {
+			throw new NotFoundError(source)
+		}
+
+		// Read source content
+		const content = await sourceFile.getArrayBuffer()
+
+		// Determine if destination is a string (file name) or a directory
+		const isStringDest = typeof destination === 'string'
+		const destName = isStringDest ? destination : source
+
+		// Check if destination exists and overwrite is not allowed
+		if (!options?.overwrite) {
+			const exists = isStringDest
+				? await this.hasFile(destName)
+				: await destination.hasFile(destName)
+			if (exists) {
+				throw new TypeMismatchError('file', destName)
+			}
+		}
+
+		// Create destination file and write content
+		const destFile = isStringDest
+			? await this.createFile(destName)
+			: await destination.createFile(destName)
+		await destFile.write(content)
+
+		return destFile
+	}
+
+	/**
+	 * Moves a file to a destination
+	 * @param source - Source file name
+	 * @param destination - Destination file name or directory
+	 * @param options - Move options
+	 */
+	async moveFile(source: string, destination: string | DirectoryInterface, options?: MoveOptions): Promise<FileInterface> {
+		// Copy the file, passing through options if provided
+		const destFile = await this.copyFile(source, destination, options)
+
+		// Remove source file
+		await this.removeFile(source)
+
+		return destFile
 	}
 }

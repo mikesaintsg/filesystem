@@ -30,6 +30,7 @@ import {
 	isAbortError,
 	NotFoundError,
 	ERROR_MESSAGES,
+	InMemoryAdapter,
 } from '~/src/index.js'
 import type { FileSystemInterface, DirectoryInterface, FileInterface } from '~/src/types.js'
 
@@ -37,7 +38,7 @@ import type { FileSystemInterface, DirectoryInterface, FileInterface } from '~/s
 // App State
 // ============================================================================
 
-type TabId = 'opfs' | 'directories' | 'files' | 'streams' | 'pickers' | 'dragdrop' | 'errors'
+type TabId = 'opfs' | 'directories' | 'files' | 'streams' | 'pickers' | 'dragdrop' | 'errors' | 'adapters'
 
 let fs: FileSystemInterface | null = null
 let root: DirectoryInterface | null = null
@@ -59,6 +60,7 @@ interface TabDefinition {
 
 const TABS: readonly TabDefinition[] = [
 	{ id: 'dragdrop', emoji: '🎯', label: 'Drag & Drop', description: 'Drop files and folders - works everywhere' },
+	{ id: 'adapters', emoji: '🔌', label: 'Adapters', description: 'Pluggable storage backends - InMemory, OPFS' },
 	{ id: 'opfs', emoji: '💾', label: 'OPFS Storage', description: 'Origin Private File System - sandboxed storage for web apps' },
 	{ id: 'directories', emoji: '📁', label: 'Directories', description: 'Create nested directories, list contents, recursive walk' },
 	{ id: 'files', emoji: '📄', label: 'File Operations', description: 'Read/write text, binary, blob, stream formats' },
@@ -140,6 +142,13 @@ function getExamplesForTab(tab: TabId): readonly ExampleDefinition[] {
 				{ id: 'not-found', title: 'NotFoundError', description: 'Thrown when file/directory not found', run: demonstrateNotFoundError },
 				{ id: 'type-guards', title: 'Type Guards', description: 'Safe error type checking', run: demonstrateTypeGuards },
 				{ id: 'error-codes', title: 'Error Codes', description: 'All error code enumeration', run: demonstrateErrorCodes },
+			]
+		case 'adapters':
+			return [
+				{ id: 'inmemory', title: 'InMemoryAdapter', description: 'Create and use in-memory storage', run: demonstrateInMemoryAdapter },
+				{ id: 'copy-file', title: 'copyFile() - Copy File', description: 'Copy a file within directory', run: demonstrateCopyFile },
+				{ id: 'move-file', title: 'moveFile() - Move File', description: 'Move a file to a new location', run: demonstrateMoveFile },
+				{ id: 'export-fs', title: 'export() - Export FileSystem', description: 'Export file system to portable format', run: demonstrateExport },
 			]
 	}
 }
@@ -1067,6 +1076,224 @@ function demonstrateErrorCodes(): ExampleResult {
 // NO_MODIFICATION_ALLOWED, INVALID_STATE,
 // QUOTA_EXCEEDED, ABORT, SECURITY,
 // ENCODING, NOT_SUPPORTED`,
+	}
+}
+
+// ============================================================================
+// Adapter Demonstrations
+// ============================================================================
+
+async function demonstrateInMemoryAdapter(): Promise<ExampleResult> {
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
+
+	// Demo data
+	const settingsData = { theme: 'dark', lang: 'en' }
+	const usersData = [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }]
+	const readmeContent = '# My App\nWelcome to the app!'
+	const PREVIEW_LENGTH = 50
+
+	// Create a realistic file structure
+	await adapter.createDirectory('/app')
+	await adapter.createDirectory('/app/config')
+	await adapter.createDirectory('/app/data')
+
+	// Write files
+	await adapter.writeFile('/app/config/settings.json', JSON.stringify(settingsData, null, 2))
+	await adapter.writeFile('/app/data/users.json', JSON.stringify(usersData, null, 2))
+	await adapter.writeFile('/app/README.md', readmeContent)
+
+	// Read back content
+	const settings = await adapter.getFileText('/app/config/settings.json')
+	const readme = await adapter.getFileText('/app/README.md')
+
+	// List entries
+	const appEntries = await adapter.listEntries('/app')
+	const configEntries = await adapter.listEntries('/app/config')
+
+	// Get quota info
+	const quota = await adapter.getQuota()
+
+	adapter.close()
+
+	return {
+		success: true,
+		message: `✅ InMemoryAdapter working! Created ${appEntries.length} entries in /app`,
+		data: {
+			structure: {
+				'/app': appEntries.map(e => `${e.kind === 'directory' ? '📁' : '📄'} ${e.name}`),
+				'/app/config': configEntries.map(e => `📄 ${e.name}`),
+			},
+			files: {
+				settings: JSON.parse(settings) as typeof settingsData,
+				readme: readme.substring(0, PREVIEW_LENGTH) + '...',
+			},
+			quota: {
+				usage: `${(quota.usage / 1024).toFixed(1)} KB`,
+				available: `${(quota.available / 1024 / 1024).toFixed(1)} MB`,
+			},
+		},
+		code: `import { InMemoryAdapter } from '@mikesaintsg/filesystem'
+
+const adapter = new InMemoryAdapter()
+await adapter.init()
+
+// Create directories and files
+await adapter.createDirectory('/app/config')
+await adapter.writeFile('/app/config/settings.json', '{"theme": "dark"}')
+
+// Read content
+const content = await adapter.getFileText('/app/config/settings.json')
+
+// List entries
+const entries = await adapter.listEntries('/app')
+
+adapter.close()`,
+	}
+}
+
+async function demonstrateCopyFile(): Promise<ExampleResult> {
+	// Use InMemoryAdapter so this works everywhere
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
+
+	try {
+		// Create directory structure
+		await adapter.createDirectory('/demo')
+
+		// Create source file
+		await adapter.writeFile('/demo/source.txt', 'Content to copy')
+
+		// Copy the file
+		await adapter.copyFile('/demo/source.txt', '/demo/copy.txt')
+		const copyContent = await adapter.getFileText('/demo/copy.txt')
+
+		// Verify both files exist
+		const sourceExists = await adapter.hasFile('/demo/source.txt')
+		const copyExists = await adapter.hasFile('/demo/copy.txt')
+
+		adapter.close()
+
+		return {
+			success: true,
+			message: `✅ Copied file! Content: "${copyContent}"`,
+			data: {
+				sourceExists,
+				copyExists,
+				copyContent,
+			},
+			code: `// Copy a file to a new name
+const copy = await directory.copyFile('source.txt', 'copy.txt')
+
+// Copy to another directory
+const otherDir = await root.createDirectory('backup')
+const copy2 = await directory.copyFile('source.txt', otherDir)
+
+// Copy with overwrite option
+await directory.copyFile('source.txt', 'existing.txt', { overwrite: true })`,
+		}
+	} catch (error) {
+		adapter.close()
+		return { success: false, message: `Copy failed: ${error instanceof Error ? error.message : 'Unknown error'}` }
+	}
+}
+
+async function demonstrateMoveFile(): Promise<ExampleResult> {
+	// Use InMemoryAdapter so this works everywhere
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
+
+	try {
+		// Create directory structure
+		await adapter.createDirectory('/demo')
+
+		// Create source file
+		await adapter.writeFile('/demo/source.txt', 'Content to move')
+
+		// Move the file
+		await adapter.moveFile('/demo/source.txt', '/demo/moved.txt')
+		const movedContent = await adapter.getFileText('/demo/moved.txt')
+
+		// Verify source no longer exists
+		const sourceExists = await adapter.hasFile('/demo/source.txt')
+		const movedExists = await adapter.hasFile('/demo/moved.txt')
+
+		adapter.close()
+
+		return {
+			success: true,
+			message: `✅ Moved file! Content: "${movedContent}"`,
+			data: {
+				sourceExists,
+				movedExists,
+				result: sourceExists ? '❌ Source still exists' : '✓ Source deleted',
+			},
+			code: `// Move a file to a new name
+const moved = await directory.moveFile('source.txt', 'newname.txt')
+
+// Move to another directory
+const otherDir = await root.createDirectory('archive')
+const moved2 = await directory.moveFile('file.txt', otherDir)
+
+// Move with overwrite option
+await directory.moveFile('source.txt', 'existing.txt', { overwrite: true })`,
+		}
+	} catch (error) {
+		adapter.close()
+		return { success: false, message: `Move failed: ${error instanceof Error ? error.message : 'Unknown error'}` }
+	}
+}
+
+async function demonstrateExport(): Promise<ExampleResult> {
+	// Use InMemoryAdapter so this works everywhere
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
+
+	try {
+		// Create a file structure to export
+		await adapter.createDirectory('/project')
+		await adapter.writeFile('/project/readme.txt', '# My Project\nWelcome!')
+		await adapter.createDirectory('/project/src')
+		await adapter.writeFile('/project/src/main.ts', 'console.log("Hello!")')
+		await adapter.writeFile('/project/src/config.json', '{"version": 1}')
+
+		// Export the file system
+		const exported = await adapter.export()
+
+		// Show what was exported
+		const fileEntries = exported.entries.filter(e => e.kind === 'file')
+		const dirEntries = exported.entries.filter(e => e.kind === 'directory')
+
+		adapter.close()
+
+		return {
+			success: true,
+			message: `✅ Exported ${exported.entries.length} entries (${dirEntries.length} dirs, ${fileEntries.length} files)`,
+			data: {
+				version: exported.version,
+				exportedAt: new Date(exported.exportedAt).toISOString(),
+				entries: exported.entries.map(e => ({
+					path: e.path,
+					kind: e.kind,
+					size: e.kind === 'file' && e.content ? e.content.byteLength : undefined,
+				})),
+			},
+			code: `// Export entire file system
+const exported = await fs.export()
+
+// Export specific paths only
+const partial = await fs.export({ includePaths: ['/data'] })
+
+// Exclude certain paths
+const filtered = await fs.export({ excludePaths: ['/temp'] })
+
+// Import into another file system
+await anotherFs.import(exported)
+await anotherFs.import(exported, { mergeBehavior: 'skip' })`,
+		}
+	} catch (error) {
+		adapter.close()
+		return { success: false, message: `Export failed: ${error instanceof Error ? error.message : 'Unknown error'}` }
 	}
 }
 

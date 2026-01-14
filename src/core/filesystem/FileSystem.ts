@@ -13,96 +13,15 @@ import type {
 	OpenFilePickerOptions,
 	SaveFilePickerOptions,
 	DirectoryPickerOptions,
+	ExportedFileSystem,
+	ExportedEntry,
+	ExportOptions,
+	ImportOptions,
 } from '../../types.js'
 import { NotSupportedError, AbortError, wrapDOMException } from '../../errors.js'
 import { File as FileWrapper } from '../file/File.js'
 import { Directory } from '../directory/Directory.js'
-
-/**
- * Read-only file wrapper for File API sources.
- * Wraps a native File object without a handle, so write operations throw.
- */
-class ReadOnlyFile implements FileInterface {
-	readonly #file: globalThis.File
-	#handle: FileSystemFileHandle | null = null
-
-	constructor(file: globalThis.File) {
-		this.#file = file
-	}
-
-	get native(): FileSystemFileHandle {
-		if (!this.#handle) {
-			// Create a minimal handle-like object for compatibility
-			// This is a shim for File API sources which don't have real handles
-			throw new NotSupportedError('File API sources do not have native handles')
-		}
-		return this.#handle
-	}
-
-	getName(): string {
-		return this.#file.name
-	}
-
-	getMetadata() {
-		return Promise.resolve({
-			name: this.#file.name,
-			size: this.#file.size,
-			type: this.#file.type,
-			lastModified: this.#file.lastModified,
-		})
-	}
-
-	getText(): Promise<string> {
-		return this.#file.text()
-	}
-
-	getArrayBuffer(): Promise<ArrayBuffer> {
-		return this.#file.arrayBuffer()
-	}
-
-	getBlob(): Promise<Blob> {
-		return Promise.resolve(this.#file)
-	}
-
-	getStream(): ReadableStream<Uint8Array> {
-		return this.#file.stream()
-	}
-
-	write(): Promise<void> {
-		return Promise.reject(new NotSupportedError('Cannot write to File API sources'))
-	}
-
-	append(): Promise<void> {
-		return Promise.reject(new NotSupportedError('Cannot write to File API sources'))
-	}
-
-	truncate(): Promise<void> {
-		return Promise.reject(new NotSupportedError('Cannot write to File API sources'))
-	}
-
-	openWritable(): Promise<never> {
-		return Promise.reject(new NotSupportedError('Cannot write to File API sources'))
-	}
-
-	hasReadPermission(): Promise<boolean> {
-		return Promise.resolve(true)
-	}
-
-	hasWritePermission(): Promise<boolean> {
-		return Promise.resolve(false)
-	}
-
-	requestWritePermission(): Promise<boolean> {
-		return Promise.resolve(false)
-	}
-
-	isSameEntry(other: FileInterface | DirectoryInterface): Promise<boolean> {
-		if (other instanceof ReadOnlyFile) {
-			return Promise.resolve(this.#file === other.#file)
-		}
-		return Promise.resolve(false)
-	}
-}
+import { ReadOnlyFile } from '../file/ReadOnlyFile.js'
 
 /**
  * FileSystem implementation.
@@ -332,5 +251,117 @@ export class FileSystem implements FileSystemInterface {
 		}
 
 		return Promise.resolve(results)
+	}
+
+	// ---- Migration ----
+
+	/**
+	 * Exports the file system to a portable format
+	 * @param options - Export options
+	 */
+	async export(options?: ExportOptions): Promise<ExportedFileSystem> {
+		const root = await this.getRoot()
+		const entries: ExportedEntry[] = []
+
+		// Walk the entire directory tree
+		for await (const walkEntry of root.walk()) {
+			const fullPath = '/' + [...walkEntry.path, walkEntry.entry.name].join('/')
+
+			// Check include/exclude paths
+			if (options?.includePaths && options.includePaths.length > 0) {
+				const included = options.includePaths.some(p => fullPath.startsWith(p))
+				if (!included) continue
+			}
+
+			if (options?.excludePaths && options.excludePaths.length > 0) {
+				const excluded = options.excludePaths.some(p => fullPath.startsWith(p))
+				if (excluded) continue
+			}
+
+			if (walkEntry.entry.kind === 'file') {
+				const fileHandle = walkEntry.entry.handle as FileSystemFileHandle
+				const file = await fileHandle.getFile()
+				const content = await file.arrayBuffer()
+				entries.push({
+					path: fullPath,
+					name: walkEntry.entry.name,
+					kind: 'file',
+					content,
+					lastModified: file.lastModified,
+				})
+			} else {
+				entries.push({
+					path: fullPath,
+					name: walkEntry.entry.name,
+					kind: 'directory',
+				})
+			}
+		}
+
+		return {
+			version: 1,
+			exportedAt: Date.now(),
+			entries,
+		}
+	}
+
+	/**
+	 * Imports a file system from exported data
+	 * @param data - Exported file system data
+	 * @param options - Import options
+	 */
+	async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
+		const root = await this.getRoot()
+		const mergeBehavior = options?.mergeBehavior ?? 'replace'
+
+		// Sort entries to process directories before files
+		const sortedEntries = [...data.entries].sort((a, b) => {
+			if (a.kind === 'directory' && b.kind !== 'directory') return -1
+			if (a.kind !== 'directory' && b.kind === 'directory') return 1
+			return a.path.localeCompare(b.path)
+		})
+
+		for (const entry of sortedEntries) {
+			// Parse path segments (skip leading empty string from leading /)
+			const segments = entry.path.split('/').filter(s => s.length > 0)
+			if (segments.length === 0) continue
+
+			if (entry.kind === 'directory') {
+				// Create the directory path
+				await root.createPath(...segments)
+			} else {
+				// Navigate to parent directory
+				const parentSegments = segments.slice(0, -1)
+				const fileName = segments[segments.length - 1]
+				if (fileName === undefined) continue
+
+				let targetDir: DirectoryInterface = root
+				if (parentSegments.length > 0) {
+					targetDir = await root.createPath(...parentSegments)
+				}
+
+				// Check if file exists
+				const exists = await targetDir.hasFile(fileName)
+				if (exists) {
+					if (mergeBehavior === 'skip') continue
+					if (mergeBehavior === 'error') {
+						throw new Error(`File already exists: ${entry.path}`)
+					}
+					// 'replace' - continue and overwrite
+				}
+
+				// Create file and write content
+				const file = await targetDir.createFile(fileName)
+				await file.write(entry.content)
+			}
+		}
+	}
+
+	// ---- Lifecycle ----
+
+	/** Closes the file system and releases resources */
+	close(): void {
+		// Currently OPFS doesn't require explicit cleanup
+		// This is a no-op but implements the interface for future adapter support
 	}
 }

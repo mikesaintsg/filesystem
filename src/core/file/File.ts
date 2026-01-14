@@ -14,25 +14,8 @@ import type {
 	WritableFileInterface,
 } from '../../types.js'
 import { wrapDOMException, NotAllowedError } from '../../errors.js'
+import { writeDataToStream } from '../../helpers.js'
 import { WritableFile } from './WritableFile.js'
-
-/**
- * Writes data to a writable stream, handling ReadableStream conversion
- */
-async function writeDataToStream(writable: FileSystemWritableFileStream, data: WriteData): Promise<void> {
-	if (data instanceof ReadableStream) {
-		const reader = data.getReader()
-		while (true) {
-			const { done, value } = await reader.read()
-			if (done) break
-			// Copy to a new Uint8Array with a plain ArrayBuffer
-			const copy = new Uint8Array(value)
-			await writable.write(copy.buffer)
-		}
-	} else {
-		await writable.write(data)
-	}
-}
 
 /**
  * File implementation wrapping FileSystemFileHandle.
