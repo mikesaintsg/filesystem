@@ -185,11 +185,11 @@ quota: estimate.quota ?? 0,
 }
 }
 
-async exportData(options?: ExportOptions): Promise<ExportedFileSystem> {
+async export(options?: ExportOptions): Promise<ExportedFileSystem> {
 // Walk filesystem and serialize all entries
 }
 
-async importData(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
+async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
 // Recreate directory structure and files
 }
 
@@ -270,11 +270,11 @@ const entries = await this.#db.store('entries').query()
 return entries.map(e => ({ name: e.name, kind: e.kind }))
 }
 
-async exportData(options?: ExportOptions): Promise<ExportedFileSystem> {
+async export(options?: ExportOptions): Promise<ExportedFileSystem> {
 // Read all entries and serialize
 }
 
-async importData(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
+async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
 // Write entries to IndexedDB
 }
 
@@ -360,11 +360,11 @@ entries.push({ name: entry.name, kind: entry.kind })
 return entries
 }
 
-async exportData(options?: ExportOptions): Promise<ExportedFileSystem> {
+async export(options?: ExportOptions): Promise<ExportedFileSystem> {
 // Serialize Map entries
 }
 
-async importData(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
+async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
 // Populate Map from export
 }
 
@@ -402,11 +402,11 @@ return this.#adapter.getQuota()
 }
 
 async export(options?: ExportOptions): Promise<ExportedFileSystem> {
-return this.#adapter.exportData(options)
+return this.#adapter.export(options)
 }
 
 async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
-return this.#adapter.importData(data, options)
+return this.#adapter.import(data, options)
 }
 
 close(): void {
