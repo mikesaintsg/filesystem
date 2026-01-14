@@ -12,20 +12,23 @@ This guide provides comprehensive documentation for all features, APIs, and usag
 2. [Installation](#installation)
 3. [Quick Start](#quick-start)
 4. [Core Concepts](#core-concepts)
-5. [File System Operations](#file-system-operations)
-6. [File Operations](#file-operations)
-7. [Directory Operations](#directory-operations)
-8. [Writable Streams](#writable-streams)
-9. [Sync Access (Workers)](#sync-access-workers)
-10. [Directory Traversal](#directory-traversal)
-11. [Picker Dialogs](#picker-dialogs)
-12. [Drag & Drop Integration](#drag--drop-integration)
-13. [Error Handling](#error-handling)
-14. [Native Access](#native-access)
-15. [TypeScript Integration](#typescript-integration)
-16. [Performance Tips](#performance-tips)
-17. [Browser Compatibility](#browser-compatibility)
-18. [API Reference](#api-reference)
+5. [Storage Adapters](#storage-adapters)
+6. [File System Operations](#file-system-operations)
+7. [File Operations](#file-operations)
+8. [Directory Operations](#directory-operations)
+9. [Convenience Methods](#convenience-methods)
+10. [Export & Import](#export--import)
+11. [Writable Streams](#writable-streams)
+12. [Sync Access (Workers)](#sync-access-workers)
+13. [Directory Traversal](#directory-traversal)
+14. [Picker Dialogs](#picker-dialogs)
+15. [Drag & Drop Integration](#drag--drop-integration)
+16. [Error Handling](#error-handling)
+17. [Native Access](#native-access)
+18. [TypeScript Integration](#typescript-integration)
+19. [Performance Tips](#performance-tips)
+20. [Browser Compatibility](#browser-compatibility)
+21. [API Reference](#api-reference)
 
 ---
 
@@ -36,6 +39,7 @@ This library provides a type-safe, Promise-based wrapper around browser File Sys
 - **Type safety**: Strong TypeScript types with full strict mode support
 - **Promise-based operations**: Async/await instead of complex callback patterns
 - **Unified interface**: Single API surface across OPFS, File System Access API, and legacy APIs
+- **Pluggable storage**: Swap storage backends with adapters (OPFS, InMemory, IndexedDB)
 - **Native access**: Full access to underlying browser handles via `.native` property
 - **Zero dependencies**: Built entirely on Web Platform APIs
 
@@ -184,6 +188,100 @@ The library follows consistent patterns for data access, matching the IndexedDB 
 │  fromDataTransferItem() → Entries API fallback              │
 │  fromFile()             → File API (input elements)         │
 └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Storage Adapters
+
+The library supports pluggable storage backends through the adapter pattern. This allows you to swap storage implementations without changing your application code.
+
+### Built-in Adapters
+
+| Adapter           | Description                          | Use Case                          |
+|-------------------|--------------------------------------|-----------------------------------|
+| `OPFSAdapter`     | Origin Private File System (default) | Production, persistent storage    |
+| `InMemoryAdapter` | In-memory Map storage                | Testing, temporary data           |
+| `IndexedDBAdapter`| IndexedDB-based storage              | Fallback when OPFS unavailable    |
+
+### Using Adapters
+
+```typescript
+import { createFileSystem, InMemoryAdapter, OPFSAdapter } from '@mikesaintsg/filesystem'
+
+// Default: Uses OPFS (OPFSAdapter)
+const fs = await createFileSystem()
+
+// Explicit OPFS adapter
+const opfsFS = await createFileSystem({ adapter: new OPFSAdapter() })
+
+// In-memory adapter (great for testing)
+const memFS = await createFileSystem({ adapter: new InMemoryAdapter() })
+
+// Same API regardless of adapter
+const root = await fs.getRoot()
+const file = await root.createFile('config.json')
+await file.write('{"version": 1}')
+```
+
+### InMemoryAdapter
+
+Perfect for unit testing and temporary data that doesn't need to persist:
+
+```typescript
+import { InMemoryAdapter } from '@mikesaintsg/filesystem'
+
+// Direct adapter usage (low-level)
+const adapter = new InMemoryAdapter()
+await adapter.init()
+
+// Write directly
+await adapter.writeFile('/config.json', '{"debug": true}')
+const content = await adapter.getFileText('/config.json')
+
+// Create directories
+await adapter.createDirectory('/data')
+await adapter.writeFile('/data/cache.json', '[]')
+
+// List entries
+const entries = await adapter.listEntries('/data')
+
+// Clean up
+adapter.close()
+```
+
+### Adapter Availability Check
+
+```typescript
+const adapter = new OPFSAdapter()
+
+if (await adapter.isAvailable()) {
+	await adapter.init()
+	// Use adapter
+} else {
+	// Fall back to InMemoryAdapter
+	const fallback = new InMemoryAdapter()
+	await fallback.init()
+}
+```
+
+### Automatic Fallback Pattern
+
+```typescript
+import { createFileSystem, OPFSAdapter, InMemoryAdapter } from '@mikesaintsg/filesystem'
+
+async function initFileSystem() {
+	const opfs = new OPFSAdapter()
+	
+	if (await opfs.isAvailable()) {
+		return createFileSystem({ adapter: opfs })
+	}
+	
+	console.log('OPFS unavailable, using in-memory storage')
+	return createFileSystem({ adapter: new InMemoryAdapter() })
+}
+
+const fs = await initFileSystem()
 ```
 
 ---
@@ -430,6 +528,125 @@ const isSame = await dir1.isSameEntry(dir2)
 // Get relative path from ancestor to descendant
 const path = await parentDir.resolve(childFile)
 // path: ['subdir', 'nested', 'file.txt'] or null if not a descendant
+```
+
+---
+
+## Convenience Methods
+
+Common file operations made simple with `copyFile()` and `moveFile()`.
+
+### copyFile() — Copy a File
+
+Copy a file within a directory or to another directory:
+
+```typescript
+// Copy to a new name in the same directory
+const copy = await directory.copyFile('original.txt', 'backup.txt')
+
+// Copy to another directory (keeps original name)
+const archive = await root.createDirectory('archive')
+const archived = await directory.copyFile('report.txt', archive)
+
+// Copy with overwrite option
+await directory.copyFile('source.txt', 'existing.txt', { overwrite: true })
+```
+
+### moveFile() — Move/Rename a File
+
+Move a file to a new name or another directory:
+
+```typescript
+// Rename a file (same directory)
+await directory.moveFile('old-name.txt', 'new-name.txt')
+
+// Move to another directory (keeps original name)
+const trash = await root.createDirectory('trash')
+await directory.moveFile('delete-me.txt', trash)
+
+// Move with overwrite option
+await directory.moveFile('source.txt', 'existing.txt', { overwrite: true })
+```
+
+### Copy vs Move
+
+| Operation  | Source File | Returns            |
+|------------|-------------|-------------------|
+| `copyFile` | Preserved   | New `FileInterface` |
+| `moveFile` | Deleted     | Moved `FileInterface` |
+
+---
+
+## Export & Import
+
+Migrate data between file systems or create backups with `export()` and `import()`.
+
+### Exporting a File System
+
+```typescript
+// Export entire file system
+const exported = await fs.export()
+
+console.log(`Exported ${exported.entries.length} entries`)
+console.log(`Exported at: ${new Date(exported.exportedAt).toISOString()}`)
+
+// Export specific paths only
+const partial = await fs.export({
+	includePaths: ['/data', '/config']
+})
+
+// Exclude certain paths
+const filtered = await fs.export({
+	excludePaths: ['/temp', '/cache']
+})
+```
+
+### Importing Data
+
+```typescript
+// Import from exported data
+await fs.import(exported)
+
+// Merge behaviors
+await fs.import(exported, { mergeBehavior: 'replace' })  // Overwrite existing (default)
+await fs.import(exported, { mergeBehavior: 'skip' })     // Keep existing files
+```
+
+### Migration Between Adapters
+
+```typescript
+import { createFileSystem, OPFSAdapter, InMemoryAdapter } from '@mikesaintsg/filesystem'
+
+// Export from OPFS
+const opfsFS = await createFileSystem({ adapter: new OPFSAdapter() })
+const backup = await opfsFS.export()
+opfsFS.close()
+
+// Import to InMemory for testing
+const memFS = await createFileSystem({ adapter: new InMemoryAdapter() })
+await memFS.import(backup)
+
+// Now memFS has all the same data
+const root = await memFS.getRoot()
+const files = await root.listFiles()
+```
+
+### Exported Data Format
+
+```typescript
+interface ExportedFileSystem {
+	readonly version: number              // Export format version
+	readonly exportedAt: number           // Timestamp (Date.now())
+	readonly entries: readonly ExportedEntry[]  // All entries
+}
+
+interface ExportedEntry {
+	readonly path: string                 // Full path
+	readonly name: string                 // Entry name
+	readonly kind: 'file' | 'directory'
+	readonly content?: ArrayBuffer        // File content (files only)
+	readonly lastModified?: number        // Timestamp (files only)
+}
 ```
 
 ---

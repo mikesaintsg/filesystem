@@ -1,228 +1,143 @@
-# Adapter-Based Filesystem Refactoring Guide
+# IndexedDBAdapter Implementation Guide
 
-> **Refactoring the filesystem library to support pluggable storage adapters while keeping the exact same public API**
-
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [StorageAdapterInterface](#storageadapterinterface)
-3. [Built-in Adapters](#built-in-adapters)
-4. [Core Class Refactoring](#core-class-refactoring)
-5. [Usage](#usage)
-6. [Implementation Phases](#implementation-phases)
+> **Implementing the IndexedDBAdapter using @mikesaintsg/indexeddb for fallback storage when OPFS is unavailable**
 
 ---
 
 ## Overview
 
-### The Problem
+The adapter system is already in place with `StorageAdapterInterface`, `OPFSAdapter`, and `InMemoryAdapter` implemented. This guide focuses on implementing the `IndexedDBAdapter` which provides a fallback storage option when OPFS is unavailable (e.g., in Safari iOS private browsing, older browsers).
 
-The current implementation is hardcoded to OPFS. When OPFS is unavailable, the library fails.
+### Completed Adapters
 
-### The Solution
+| Adapter           | Status      | Description                          |
+|-------------------|-------------|--------------------------------------|
+| `OPFSAdapter`     | ✅ Complete | Origin Private File System (default) |
+| `InMemoryAdapter` | ✅ Complete | In-memory Map storage for testing    |
+| `IndexedDBAdapter`| 🔄 Pending  | IndexedDB-based persistent storage   |
 
-Replace the hardcoded OPFS implementation with a pluggable adapter system:
+---
 
-1. **Public API stays exactly the same** — `FileSystemInterface`, `FileInterface`, `DirectoryInterface`, `WritableFileInterface` unchanged
-2. **One new option** — `{ adapter: new IndexedDBAdapter() }`
-3. **OPFSAdapter is the default** — When no adapter is provided, uses OPFS
-4. **Three built-in adapters** — OPFSAdapter, IndexedDBAdapter, InMemoryAdapter
-5. **Custom adapters** — Developers can implement `StorageAdapterInterface`
+## IndexedDBAdapter Design
+
+The `IndexedDBAdapter` will use `@mikesaintsg/indexeddb` to store files and directories in IndexedDB. This provides:
+
+- **Persistence**: Data survives page reloads
+- **Fallback**: Works when OPFS is unavailable
+- **Cross-browser**: IndexedDB has wider support than OPFS
+
+### Database Schema
 
 ```typescript
-// Current usage - unchanged
-const fs = await createFileSystem()
+interface FileSystemEntry {
+readonly path: string        // Primary key, e.g., '/data/config.json'
+readonly name: string        // Entry name, e.g., 'config.json'
+readonly parent: string      // Parent path, e.g., '/data' (indexed)
+readonly kind: 'file' | 'directory'
+readonly content?: ArrayBuffer    // File content (files only)
+readonly lastModified?: number    // Timestamp (files only)
+}
 
-// With adapter support
-const fs = await createFileSystem()                                     // OPFS (default)
-const fs = await createFileSystem({ adapter: new IndexedDBAdapter() })  // IndexedDB
-const fs = await createFileSystem({ adapter: new InMemoryAdapter() })   // In-memory
+interface FileSystemSchema {
+readonly entries: FileSystemEntry
+}
+```
+
+### Database Configuration
+
+```typescript
+import { createDatabase } from '@mikesaintsg/indexeddb'
+
+const db = await createDatabase<FileSystemSchema>({
+name: '@mikesaintsg/filesystem',
+version: 1,
+stores: {
+entries: {
+keyPath: 'path',
+indexes: [
+{ name: 'byParent', keyPath: 'parent' }
+]
+}
+}
+})
 ```
 
 ---
 
-## StorageAdapterInterface
+## Implementation
 
-The single interface that all adapters must implement. This is the contract that enables pluggable storage backends.
-
-```typescript
-// src/types.ts
-
-/**
- * Storage adapter interface for pluggable backends.
- * All adapters implement this exact contract with identical method signatures.
- */
-export interface StorageAdapterInterface {
-/**
- * Checks if this adapter is available in the current environment.
- */
-isAvailable(): Promise<boolean>
-
-/**
- * Initializes the adapter.
- */
-init(): Promise<void>
-
-/**
- * Closes the adapter and releases resources.
- */
-close(): void
-
-// ─────────────────────────────────────────────────────────────
-// FILE OPERATIONS
-// ─────────────────────────────────────────────────────────────
-
-getFileText(path: string): Promise<string>
-getFileArrayBuffer(path: string): Promise<ArrayBuffer>
-getFileBlob(path: string): Promise<Blob>
-getFileMetadata(path: string): Promise<FileMetadata>
-writeFile(path: string, data: WriteData, options?: WriteOptions): Promise<void>
-appendFile(path: string, data: WriteData): Promise<void>
-truncateFile(path: string, size: number): Promise<void>
-hasFile(path: string): Promise<boolean>
-removeFile(path: string): Promise<void>
-
-// ─────────────────────────────────────────────────────────────
-// DIRECTORY OPERATIONS
-// ─────────────────────────────────────────────────────────────
-
-createDirectory(path: string): Promise<void>
-hasDirectory(path: string): Promise<boolean>
-removeDirectory(path: string, options?: RemoveDirectoryOptions): Promise<void>
-listEntries(path: string): Promise<readonly DirectoryEntry[]>
-
-// ─────────────────────────────────────────────────────────────
-// QUOTA & MIGRATION
-// ─────────────────────────────────────────────────────────────
-
-getQuota(): Promise<StorageQuota>
-export(options?: ExportOptions): Promise<ExportedFileSystem>
-import(data: ExportedFileSystem, options?: ImportOptions): Promise<void>
-}
-```
-
-All adapters implement this interface with **identical method signatures** — same parameters, same return types. This means any adapter can be swapped for another without changing any code.
-
----
-
-## Built-in Adapters
-
-Three adapters are provided out of the box.
-
-### OPFSAdapter (Default)
-
-Uses the Origin Private File System. This is the default when no adapter is provided.
-
-```typescript
-// src/adapters/OPFSAdapter.ts
-
-export class OPFSAdapter implements StorageAdapterInterface {
-#root: FileSystemDirectoryHandle | null = null
-
-async isAvailable(): Promise<boolean> {
-if (typeof navigator?.storage?.getDirectory !== 'function') return false
-try {
-await navigator.storage.getDirectory()
-return true
-} catch {
-return false
-}
-}
-
-async init(): Promise<void> {
-this.#root = await navigator.storage.getDirectory()
-}
-
-close(): void {
-this.#root = null
-}
-
-async getFileText(path: string): Promise<string> {
-const handle = await this.#resolveFileHandle(path)
-const file = await handle.getFile()
-return file.text()
-}
-
-async getFileArrayBuffer(path: string): Promise<ArrayBuffer> {
-const handle = await this.#resolveFileHandle(path)
-const file = await handle.getFile()
-return file.arrayBuffer()
-}
-
-async getFileBlob(path: string): Promise<Blob> {
-const handle = await this.#resolveFileHandle(path)
-return handle.getFile()
-}
-
-async writeFile(path: string, data: WriteData, options?: WriteOptions): Promise<void> {
-const handle = await this.#resolveFileHandle(path, { create: true })
-const writable = await handle.createWritable({ keepExistingData: options?.keepExistingData })
-if (options?.position !== undefined) await writable.seek(options.position)
-await writable.write(data)
-await writable.close()
-}
-
-async createDirectory(path: string): Promise<void> {
-await this.#resolveDirectoryHandle(path, { create: true })
-}
-
-async listEntries(path: string): Promise<readonly DirectoryEntry[]> {
-const handle = await this.#resolveDirectoryHandle(path)
-const entries: DirectoryEntry[] = []
-for await (const [name, entryHandle] of handle.entries()) {
-entries.push({ name, kind: entryHandle.kind })
-}
-return entries
-}
-
-async getQuota(): Promise<StorageQuota> {
-const estimate = await navigator.storage.estimate()
-return {
-usage: estimate.usage ?? 0,
-quota: estimate.quota ?? 0,
-}
-}
-
-async export(options?: ExportOptions): Promise<ExportedFileSystem> {
-// Walk filesystem and serialize all entries
-}
-
-async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
-// Recreate directory structure and files
-}
-
-// Private helpers
-#resolveFileHandle(path: string, options?: { create?: boolean }): Promise<FileSystemFileHandle> { /* ... */ }
-#resolveDirectoryHandle(path: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandle> { /* ... */ }
-}
-```
-
-### IndexedDBAdapter
-
-Uses IndexedDB via `@mikesaintsg/indexeddb`. Useful as a fallback when OPFS is unavailable.
+### Class Structure
 
 ```typescript
 // src/adapters/IndexedDBAdapter.ts
 
-import { createDatabase } from '@mikesaintsg/indexeddb'
+import { createDatabase, type DatabaseInterface } from '@mikesaintsg/indexeddb'
+import type {
+StorageAdapterInterface,
+FileMetadata,
+WriteData,
+WriteOptions,
+RemoveDirectoryOptions,
+AdapterDirectoryEntry,
+StorageQuota,
+ExportedFileSystem,
+ExportOptions,
+ImportOptions,
+CopyOptions,
+} from '../types.js'
+import { NotFoundError, TypeMismatchError } from '../errors.js'
+
+interface FileSystemEntry {
+readonly path: string
+readonly name: string
+readonly parent: string
+readonly kind: 'file' | 'directory'
+readonly content?: ArrayBuffer
+readonly lastModified?: number
+}
+
+interface FileSystemSchema {
+readonly entries: FileSystemEntry
+}
 
 export class IndexedDBAdapter implements StorageAdapterInterface {
-#db: DatabaseInterface | null = null
+#db: DatabaseInterface<FileSystemSchema> | null = null
+#dbName: string
 
-async isAvailable(): Promise<boolean> {
-return typeof indexedDB !== 'undefined'
+constructor(dbName = '@mikesaintsg/filesystem') {
+this.#dbName = dbName
+}
+
+// ---- Lifecycle ----
+
+isAvailable(): Promise<boolean> {
+return Promise.resolve(typeof indexedDB !== 'undefined')
 }
 
 async init(): Promise<void> {
-this.#db = await createDatabase({
-name: '@mikesaintsg/filesystem',
+this.#db = await createDatabase<FileSystemSchema>({
+name: this.#dbName,
 version: 1,
 stores: {
-entries: { keyPath: 'path', indexes: [{ name: 'parent', keyPath: 'parent' }] }
+entries: {
+keyPath: 'path',
+indexes: [
+{ name: 'byParent', keyPath: 'parent' }
+]
+}
 }
 })
+
+// Ensure root directory exists
+const root = await this.#db.store('entries').get('/')
+if (!root) {
+await this.#db.store('entries').set({
+path: '/',
+name: '',
+parent: '',
+kind: 'directory',
+})
+}
 }
 
 close(): void {
@@ -230,21 +145,89 @@ this.#db?.close()
 this.#db = null
 }
 
+// ---- File Operations ----
+
 async getFileText(path: string): Promise<string> {
-const entry = await this.#db.store('entries').get(path)
-if (!entry || entry.kind !== 'file') throw new NotFoundError(path)
+const entry = await this.#getEntry(path)
+if (!entry || entry.kind !== 'file') {
+throw new NotFoundError(path)
+}
+if (!entry.content) {
+return ''
+}
 return new TextDecoder().decode(entry.content)
 }
 
 async getFileArrayBuffer(path: string): Promise<ArrayBuffer> {
-const entry = await this.#db.store('entries').get(path)
-if (!entry || entry.kind !== 'file') throw new NotFoundError(path)
-return entry.content
+const entry = await this.#getEntry(path)
+if (!entry || entry.kind !== 'file') {
+throw new NotFoundError(path)
+}
+return entry.content ?? new ArrayBuffer(0)
+}
+
+async getFileBlob(path: string): Promise<Blob> {
+const buffer = await this.getFileArrayBuffer(path)
+return new Blob([buffer])
+}
+
+async getFileMetadata(path: string): Promise<FileMetadata> {
+const entry = await this.#getEntry(path)
+if (!entry || entry.kind !== 'file') {
+throw new NotFoundError(path)
+}
+return {
+name: entry.name,
+size: entry.content?.byteLength ?? 0,
+type: '',
+lastModified: entry.lastModified ?? Date.now(),
+}
 }
 
 async writeFile(path: string, data: WriteData, options?: WriteOptions): Promise<void> {
 const content = await this.#toArrayBuffer(data)
-await this.#db.store('entries').set({
+const existing = await this.#getEntry(path)
+
+let finalContent = content
+if (options?.keepExistingData && existing?.content && options?.position !== undefined) {
+// Merge with existing content
+const existingArray = new Uint8Array(existing.content)
+const newArray = new Uint8Array(content)
+const resultSize = Math.max(existingArray.length, options.position + newArray.length)
+const result = new Uint8Array(resultSize)
+result.set(existingArray)
+result.set(newArray, options.position)
+finalContent = result.buffer
+}
+
+await this.#db!.store('entries').set({
+path,
+name: this.#getName(path),
+parent: this.#getParent(path),
+kind: 'file',
+content: finalContent,
+lastModified: Date.now(),
+})
+
+// Ensure parent directories exist
+await this.#ensureParentDirectories(path)
+}
+
+async appendFile(path: string, data: WriteData): Promise<void> {
+const existing = await this.#getEntry(path)
+const newContent = await this.#toArrayBuffer(data)
+
+let content: ArrayBuffer
+if (existing?.content) {
+const merged = new Uint8Array(existing.content.byteLength + newContent.byteLength)
+merged.set(new Uint8Array(existing.content))
+merged.set(new Uint8Array(newContent), existing.content.byteLength)
+content = merged.buffer
+} else {
+content = newContent
+}
+
+await this.#db!.store('entries').set({
 path,
 name: this.#getName(path),
 parent: this.#getParent(path),
@@ -254,286 +237,317 @@ lastModified: Date.now(),
 })
 }
 
-async createDirectory(path: string): Promise<void> {
-await this.#db.store('entries').set({
-path,
-name: this.#getName(path),
-parent: this.#getParent(path),
-kind: 'directory',
+async truncateFile(path: string, size: number): Promise<void> {
+const entry = await this.#getEntry(path)
+if (!entry || entry.kind !== 'file') {
+throw new NotFoundError(path)
+}
+
+const existing = entry.content ?? new ArrayBuffer(0)
+let newContent: ArrayBuffer
+
+if (size <= existing.byteLength) {
+newContent = existing.slice(0, size)
+} else {
+newContent = new ArrayBuffer(size)
+new Uint8Array(newContent).set(new Uint8Array(existing))
+}
+
+await this.#db!.store('entries').set({
+...entry,
+content: newContent,
+lastModified: Date.now(),
 })
 }
 
-async listEntries(path: string): Promise<readonly DirectoryEntry[]> {
-const entries = await this.#db.store('entries').query()
-.where('parent').equals(path)
-.toArray()
-return entries.map(e => ({ name: e.name, kind: e.kind }))
+async hasFile(path: string): Promise<boolean> {
+const entry = await this.#getEntry(path)
+return entry?.kind === 'file'
 }
 
-async export(options?: ExportOptions): Promise<ExportedFileSystem> {
-// Read all entries and serialize
+async removeFile(path: string): Promise<void> {
+const entry = await this.#getEntry(path)
+if (!entry) {
+throw new NotFoundError(path)
+}
+if (entry.kind !== 'file') {
+throw new TypeMismatchError('file', path)
+}
+await this.#db!.store('entries').remove(path)
 }
 
-async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
-// Write entries to IndexedDB
+async copyFile(sourcePath: string, destPath: string, options?: CopyOptions): Promise<void> {
+const source = await this.#getEntry(sourcePath)
+if (!source || source.kind !== 'file') {
+throw new NotFoundError(sourcePath)
 }
 
-// Private helpers
-#getName(path: string): string { return path.split('/').pop() ?? '' }
-#getParent(path: string): string { return path.substring(0, path.lastIndexOf('/')) || '/' }
-#toArrayBuffer(data: WriteData): Promise<ArrayBuffer> { /* ... */ }
+if (!options?.overwrite) {
+const existing = await this.#getEntry(destPath)
+if (existing) {
+throw new TypeMismatchError('file', destPath)
 }
-```
-
-### InMemoryAdapter
-
-Stores everything in memory. Useful for testing and temporary storage.
-
-```typescript
-// src/adapters/InMemoryAdapter.ts
-
-interface MemoryEntry {
-path: string
-name: string
-parent: string
-kind: 'file' | 'directory'
-content?: ArrayBuffer
-lastModified?: number
 }
 
-export class InMemoryAdapter implements StorageAdapterInterface {
-#entries = new Map<string, MemoryEntry>()
+await this.#db!.store('entries').set({
+path: destPath,
+name: this.#getName(destPath),
+parent: this.#getParent(destPath),
+kind: 'file',
+content: source.content,
+lastModified: Date.now(),
+})
 
-async isAvailable(): Promise<boolean> {
+await this.#ensureParentDirectories(destPath)
+}
+
+async moveFile(sourcePath: string, destPath: string, options?: CopyOptions): Promise<void> {
+await this.copyFile(sourcePath, destPath, options)
+await this.#db!.store('entries').remove(sourcePath)
+}
+
+// ---- Directory Operations ----
+
+async createDirectory(path: string): Promise<void> {
+const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path
+if (normalizedPath === '' || normalizedPath === '/') {
+return // Root always exists
+}
+
+await this.#db!.store('entries').set({
+path: normalizedPath,
+name: this.#getName(normalizedPath),
+parent: this.#getParent(normalizedPath),
+kind: 'directory',
+})
+
+await this.#ensureParentDirectories(normalizedPath)
+}
+
+async hasDirectory(path: string): Promise<boolean> {
+const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path
+if (normalizedPath === '' || normalizedPath === '/') {
 return true
 }
-
-async init(): Promise<void> {
-this.#entries.clear()
-this.#entries.set('/', { path: '/', name: '', parent: '', kind: 'directory' })
+const entry = await this.#getEntry(normalizedPath)
+return entry?.kind === 'directory'
 }
 
-close(): void {
-this.#entries.clear()
+async removeDirectory(path: string, options?: RemoveDirectoryOptions): Promise<void> {
+const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path
+const entry = await this.#getEntry(normalizedPath)
+
+if (!entry) {
+throw new NotFoundError(path)
+}
+if (entry.kind !== 'directory') {
+throw new TypeMismatchError('directory', path)
 }
 
-async getFileText(path: string): Promise<string> {
-const entry = this.#entries.get(path)
-if (!entry || entry.kind !== 'file') throw new NotFoundError(path)
-return new TextDecoder().decode(entry.content)
+// Check for children using index
+const children = await this.#db!.store('entries')
+.index('byParent')
+.all(IDBKeyRange.only(normalizedPath))
+
+if (children.length > 0 && !options?.recursive) {
+throw new Error('Directory not empty')
 }
 
-async getFileArrayBuffer(path: string): Promise<ArrayBuffer> {
-const entry = this.#entries.get(path)
-if (!entry || entry.kind !== 'file') throw new NotFoundError(path)
-return entry.content!
+if (options?.recursive) {
+// Remove all descendants
+const allEntries = await this.#db!.store('entries').all()
+for (const e of allEntries) {
+if (e.path.startsWith(normalizedPath + '/') || e.path === normalizedPath) {
+if (e.path !== '/') {
+await this.#db!.store('entries').remove(e.path)
+}
+}
+}
+} else {
+await this.#db!.store('entries').remove(normalizedPath)
+}
 }
 
-async writeFile(path: string, data: WriteData, options?: WriteOptions): Promise<void> {
-const content = await this.#toArrayBuffer(data)
-this.#entries.set(path, {
-path,
-name: this.#getName(path),
-parent: this.#getParent(path),
+async listEntries(path: string): Promise<readonly AdapterDirectoryEntry[]> {
+const normalizedPath = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path
+const parentPath = normalizedPath === '/' ? '/' : normalizedPath
+
+const entries = await this.#db!.store('entries')
+.index('byParent')
+.all(IDBKeyRange.only(parentPath))
+
+return entries.map(e => ({
+name: e.name,
+kind: e.kind,
+}))
+}
+
+// ---- Quota & Migration ----
+
+async getQuota(): Promise<StorageQuota> {
+// IndexedDB doesn't have a direct quota API, use Storage API estimate
+if (navigator.storage?.estimate) {
+const estimate = await navigator.storage.estimate()
+return {
+usage: estimate.usage ?? 0,
+quota: estimate.quota ?? 0,
+available: (estimate.quota ?? 0) - (estimate.usage ?? 0),
+percentUsed: estimate.quota ? ((estimate.usage ?? 0) / estimate.quota) * 100 : 0,
+}
+}
+
+// Fallback: calculate from stored data
+const entries = await this.#db!.store('entries').all()
+let usage = 0
+for (const entry of entries) {
+if (entry.content) {
+usage += entry.content.byteLength
+}
+usage += entry.path.length + entry.name.length + 50
+}
+
+const quota = 50 * 1024 * 1024 // 50MB default estimate
+return {
+usage,
+quota,
+available: quota - usage,
+percentUsed: (usage / quota) * 100,
+}
+}
+
+async export(options?: ExportOptions): Promise<ExportedFileSystem> {
+const allEntries = await this.#db!.store('entries').all()
+const entries: ExportedEntry[] = []
+
+for (const entry of allEntries) {
+if (entry.path === '/') continue
+
+if (options?.includePaths?.length) {
+if (!options.includePaths.some(p => entry.path.startsWith(p))) continue
+}
+
+if (options?.excludePaths?.length) {
+if (options.excludePaths.some(p => entry.path.startsWith(p))) continue
+}
+
+if (entry.kind === 'file') {
+entries.push({
+path: entry.path,
+name: entry.name,
 kind: 'file',
-content,
-lastModified: Date.now(),
+content: entry.content ?? new ArrayBuffer(0),
+lastModified: entry.lastModified ?? Date.now(),
 })
-}
-
-async createDirectory(path: string): Promise<void> {
-this.#entries.set(path, {
-path,
-name: this.#getName(path),
-parent: this.#getParent(path),
+} else {
+entries.push({
+path: entry.path,
+name: entry.name,
 kind: 'directory',
 })
 }
-
-async listEntries(path: string): Promise<readonly DirectoryEntry[]> {
-const entries: DirectoryEntry[] = []
-for (const entry of this.#entries.values()) {
-if (entry.parent === path && entry.path !== '/') {
-entries.push({ name: entry.name, kind: entry.kind })
-}
-}
-return entries
 }
 
-async export(options?: ExportOptions): Promise<ExportedFileSystem> {
-// Serialize Map entries
+return {
+version: 1,
+exportedAt: Date.now(),
+entries,
+}
 }
 
 async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
-// Populate Map from export
+const mergeBehavior = options?.mergeBehavior ?? 'replace'
+
+// Sort: directories first
+const sorted = [...data.entries].sort((a, b) => {
+if (a.kind === 'directory' && b.kind !== 'directory') return -1
+if (a.kind !== 'directory' && b.kind === 'directory') return 1
+return a.path.localeCompare(b.path)
+})
+
+for (const entry of sorted) {
+if (mergeBehavior === 'skip') {
+const existing = await this.#getEntry(entry.path)
+if (existing) continue
 }
 
-// Private helpers
-#getName(path: string): string { return path.split('/').pop() ?? '' }
-#getParent(path: string): string { return path.substring(0, path.lastIndexOf('/')) || '/' }
-#toArrayBuffer(data: WriteData): Promise<ArrayBuffer> { /* ... */ }
+if (entry.kind === 'directory') {
+await this.createDirectory(entry.path)
+} else {
+await this.#db!.store('entries').set({
+path: entry.path,
+name: entry.name,
+parent: this.#getParent(entry.path),
+kind: 'file',
+content: entry.content,
+lastModified: entry.lastModified,
+})
 }
-```
-
----
-
-## Core Class Refactoring
-
-Replace the hardcoded OPFS implementation with adapter delegation. The public API remains unchanged.
-
-### FileSystem Class
-
-```typescript
-// src/core/filesystem/FileSystem.ts
-
-export class FileSystem implements FileSystemInterface {
-#adapter: StorageAdapterInterface
-
-constructor(adapter: StorageAdapterInterface) {
-this.#adapter = adapter
-}
-
-async getRoot(): Promise<DirectoryInterface> {
-return new Directory(this.#adapter, '/')
-}
-
-async getQuota(): Promise<StorageQuota> {
-return this.#adapter.getQuota()
-}
-
-async export(options?: ExportOptions): Promise<ExportedFileSystem> {
-return this.#adapter.export(options)
-}
-
-async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
-return this.#adapter.import(data, options)
-}
-
-close(): void {
-this.#adapter.close()
-}
-
-// Other existing methods unchanged...
-}
-```
-
-### Directory Class
-
-```typescript
-// src/core/directory/Directory.ts
-
-export class Directory implements DirectoryInterface {
-#adapter: StorageAdapterInterface
-#path: string
-
-constructor(adapter: StorageAdapterInterface, path: string) {
-this.#adapter = adapter
-this.#path = path
-}
-
-async createFile(name: string): Promise<FileInterface> {
-const filePath = this.#joinPath(name)
-await this.#adapter.writeFile(filePath, '')
-return new File(this.#adapter, filePath)
-}
-
-async getFile(name: string): Promise<FileInterface | undefined> {
-const filePath = this.#joinPath(name)
-if (await this.#adapter.hasFile(filePath)) {
-return new File(this.#adapter, filePath)
-}
-return undefined
-}
-
-async createDirectory(name: string): Promise<DirectoryInterface> {
-const dirPath = this.#joinPath(name)
-await this.#adapter.createDirectory(dirPath)
-return new Directory(this.#adapter, dirPath)
-}
-
-async *entries(): AsyncIterable<DirectoryEntry> {
-const entries = await this.#adapter.listEntries(this.#path)
-for (const entry of entries) {
-yield entry
 }
 }
 
-// Other methods delegate to this.#adapter...
-}
-```
+// ---- Private Helpers ----
 
-### File Class
-
-```typescript
-// src/core/file/File.ts
-
-export class File implements FileInterface {
-#adapter: StorageAdapterInterface
-#path: string
-
-constructor(adapter: StorageAdapterInterface, path: string) {
-this.#adapter = adapter
-this.#path = path
+#getEntry(path: string): Promise<FileSystemEntry | undefined> {
+return this.#db!.store('entries').get(path)
 }
 
-async getText(): Promise<string> {
-return this.#adapter.getFileText(this.#path)
+#getName(path: string): string {
+return path.split('/').pop() ?? ''
 }
 
-async getArrayBuffer(): Promise<ArrayBuffer> {
-return this.#adapter.getFileArrayBuffer(this.#path)
+#getParent(path: string): string {
+const lastSlash = path.lastIndexOf('/')
+return lastSlash <= 0 ? '/' : path.substring(0, lastSlash)
 }
 
-async getBlob(): Promise<Blob> {
-return this.#adapter.getFileBlob(this.#path)
+async #ensureParentDirectories(path: string): Promise<void> {
+const parent = this.#getParent(path)
+if (parent === '/' || parent === '') return
+
+const existing = await this.#getEntry(parent)
+if (!existing) {
+await this.#db!.store('entries').set({
+path: parent,
+name: this.#getName(parent),
+parent: this.#getParent(parent),
+kind: 'directory',
+})
+await this.#ensureParentDirectories(parent)
+}
 }
 
-async write(data: WriteData, options?: WriteOptions): Promise<void> {
-return this.#adapter.writeFile(this.#path, data, options)
+async #toArrayBuffer(data: WriteData): Promise<ArrayBuffer> {
+if (typeof data === 'string') {
+return new TextEncoder().encode(data).buffer as ArrayBuffer
 }
-
-async append(data: WriteData): Promise<void> {
-return this.#adapter.appendFile(this.#path, data)
+if (data instanceof ArrayBuffer) {
+return data
 }
-
-async truncate(size: number): Promise<void> {
-return this.#adapter.truncateFile(this.#path, size)
+if (ArrayBuffer.isView(data)) {
+return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
 }
-
-// Other methods delegate to this.#adapter...
+if (data instanceof Blob) {
+return data.arrayBuffer()
 }
-```
-
-### Factory Function
-
-```typescript
-// src/factories.ts
-
-import { OPFSAdapter } from './adapters/OPFSAdapter.js'
-
-export async function createFileSystem(options?: FileSystemOptions): Promise<FileSystemInterface> {
-// Use provided adapter or default to OPFS
-const adapter = options?.adapter ?? new OPFSAdapter()
-
-// Verify availability
-if (!await adapter.isAvailable()) {
-throw new NotSupportedError('Storage adapter is not available')
+if (data instanceof ReadableStream) {
+const chunks: Uint8Array[] = []
+const reader = data.getReader()
+while (true) {
+const { done, value } = await reader.read()
+if (done) break
+chunks.push(value)
 }
-
-// Initialize
-await adapter.init()
-
-return new FileSystem(adapter)
+const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+const result = new Uint8Array(totalLength)
+let offset = 0
+for (const chunk of chunks) {
+result.set(chunk, offset)
+offset += chunk.length
 }
-```
-
-### FileSystemOptions
-
-```typescript
-// src/types.ts
-
-export interface FileSystemOptions {
-readonly adapter?: StorageAdapterInterface
+return result.buffer as ArrayBuffer
+}
+throw new Error('Unsupported data type')
+}
 }
 ```
 
@@ -541,29 +555,19 @@ readonly adapter?: StorageAdapterInterface
 
 ## Usage
 
-### Default (OPFS)
-
-```typescript
-const fs = await createFileSystem()
-const root = await fs.getRoot()
-const file = await root.createFile('hello.txt')
-await file.write('Hello!')
-```
-
-### IndexedDB Fallback
+### Basic Usage
 
 ```typescript
 import { createFileSystem, IndexedDBAdapter } from '@mikesaintsg/filesystem'
 
 const fs = await createFileSystem({ adapter: new IndexedDBAdapter() })
-```
+const root = await fs.getRoot()
 
-### In-Memory (Testing)
+const file = await root.createFile('hello.txt')
+await file.write('Hello, IndexedDB!')
 
-```typescript
-import { createFileSystem, InMemoryAdapter } from '@mikesaintsg/filesystem'
-
-const fs = await createFileSystem({ adapter: new InMemoryAdapter() })
+const content = await file.getText()
+console.log(content) // 'Hello, IndexedDB!'
 ```
 
 ### Automatic Fallback
@@ -573,86 +577,99 @@ import { createFileSystem, OPFSAdapter, IndexedDBAdapter } from '@mikesaintsg/fi
 
 async function initFileSystem() {
 const opfs = new OPFSAdapter()
+
 if (await opfs.isAvailable()) {
 return createFileSystem({ adapter: opfs })
 }
+
+// Fall back to IndexedDB
 return createFileSystem({ adapter: new IndexedDBAdapter() })
 }
 ```
 
-### Migration
+### Custom Database Name
 
 ```typescript
-// Export from old adapter
-const oldFS = await createFileSystem({ adapter: new IndexedDBAdapter() })
-const exported = await oldFS.export()
-oldFS.close()
-
-// Import to new adapter
-const newFS = await createFileSystem({ adapter: new OPFSAdapter() })
-await newFS.import(exported)
+// Use a custom database name to avoid conflicts
+const adapter = new IndexedDBAdapter('my-app-filesystem')
+const fs = await createFileSystem({ adapter })
 ```
 
-### Custom Adapter
+---
+
+## Implementation Checklist
+
+- [ ] Create `src/adapters/IndexedDBAdapter.ts`
+- [ ] Add `@mikesaintsg/indexeddb` as a dependency
+- [ ] Implement all `StorageAdapterInterface` methods
+- [ ] Add tests in `tests/adapters/IndexedDBAdapter.test.ts`
+- [ ] Update exports in `src/adapters/index.ts`
+- [ ] Update documentation
+
+---
+
+## Testing
 
 ```typescript
-import type { StorageAdapterInterface } from '@mikesaintsg/filesystem'
+// tests/adapters/IndexedDBAdapter.test.ts
+import { describe, it, expect, beforeEach } from 'vitest'
+import { IndexedDBAdapter } from '../../src/adapters/IndexedDBAdapter.js'
 
-class MyCloudAdapter implements StorageAdapterInterface {
-// Implement all methods...
+describe('IndexedDBAdapter', () => {
+let adapter: IndexedDBAdapter
+
+beforeEach(async () => {
+adapter = new IndexedDBAdapter('test-fs-' + Date.now())
+await adapter.init()
+})
+
+afterEach(() => {
+adapter.close()
+})
+
+describe('file operations', () => {
+it('writes and reads text files', async () => {
+await adapter.writeFile('/hello.txt', 'Hello, World!')
+const content = await adapter.getFileText('/hello.txt')
+expect(content).toBe('Hello, World!')
+})
+
+it('writes and reads binary files', async () => {
+const data = new Uint8Array([1, 2, 3, 4, 5])
+await adapter.writeFile('/data.bin', data)
+const buffer = await adapter.getFileArrayBuffer('/data.bin')
+expect(new Uint8Array(buffer)).toEqual(data)
+})
+
+// More tests...
+})
+
+describe('directory operations', () => {
+it('creates nested directories', async () => {
+await adapter.createDirectory('/a/b/c')
+expect(await adapter.hasDirectory('/a')).toBe(true)
+expect(await adapter.hasDirectory('/a/b')).toBe(true)
+expect(await adapter.hasDirectory('/a/b/c')).toBe(true)
+})
+
+// More tests...
+})
+})
+```
+
+---
+
+## Dependencies
+
+Add `@mikesaintsg/indexeddb` to `package.json`:
+
+```json
+{
+"dependencies": {
+"@mikesaintsg/indexeddb": "^1.0.0"
 }
-
-const fs = await createFileSystem({ adapter: new MyCloudAdapter() })
+}
 ```
-
----
-
-## Implementation Phases
-
-### Phase 1: Types
-
-- Add `StorageAdapterInterface` to `src/types.ts`
-- Add `adapter` option to `FileSystemOptions`
-- Add `export()` and `import()` to `FileSystemInterface`
-
-### Phase 2: OPFSAdapter
-
-- Extract current OPFS logic into `src/adapters/OPFSAdapter.ts`
-- Implement `StorageAdapterInterface`
-
-### Phase 3: IndexedDBAdapter
-
-- Create `src/adapters/IndexedDBAdapter.ts`
-- Implement `StorageAdapterInterface` using `@mikesaintsg/indexeddb`
-
-### Phase 4: InMemoryAdapter
-
-- Create `src/adapters/InMemoryAdapter.ts`
-- Implement `StorageAdapterInterface` using Map
-
-### Phase 5: Core Refactoring
-
-- Update `FileSystem`, `Directory`, `File` to use adapter
-- Update `createFileSystem()` to accept adapter option
-- Default to `new OPFSAdapter()` when no adapter provided
-
-### Phase 6: Testing
-
-- Test each adapter
-- Test adapter switching
-- Test export/import
-
----
-
-## Summary
-
-| Before | After |
-|--------|-------|
-| Hardcoded OPFS | Pluggable adapters |
-| No fallback | IndexedDB, InMemory options |
-| N/A | `export()` / `import()` for migration |
-
-**Public API unchanged.** Just add `{ adapter: new XAdapter() }` to switch backends.
 
 ---
 

@@ -1087,14 +1087,23 @@ async function demonstrateInMemoryAdapter(): Promise<ExampleResult> {
 	const adapter = new InMemoryAdapter()
 	await adapter.init()
 
-	// Write a file
-	await adapter.writeFile('/hello.txt', 'Hello from InMemoryAdapter!')
-	const content = await adapter.getFileText('/hello.txt')
+	// Create a realistic file structure
+	await adapter.createDirectory('/app')
+	await adapter.createDirectory('/app/config')
+	await adapter.createDirectory('/app/data')
 
-	// Create a directory and list entries
-	await adapter.createDirectory('/data')
-	await adapter.writeFile('/data/config.json', '{"version": 1}')
-	const entries = await adapter.listEntries('/data')
+	// Write files
+	await adapter.writeFile('/app/config/settings.json', JSON.stringify({ theme: 'dark', lang: 'en' }, null, 2))
+	await adapter.writeFile('/app/data/users.json', JSON.stringify([{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }], null, 2))
+	await adapter.writeFile('/app/README.md', '# My App\nWelcome to the app!')
+
+	// Read back content
+	const settings = await adapter.getFileText('/app/config/settings.json')
+	const readme = await adapter.getFileText('/app/README.md')
+
+	// List entries
+	const appEntries = await adapter.listEntries('/app')
+	const configEntries = await adapter.listEntries('/app/config')
 
 	// Get quota info
 	const quota = await adapter.getQuota()
@@ -1103,50 +1112,70 @@ async function demonstrateInMemoryAdapter(): Promise<ExampleResult> {
 
 	return {
 		success: true,
-		message: `InMemoryAdapter working! Content: "${content}"`,
+		message: `✅ InMemoryAdapter working! Created ${appEntries.length} entries in /app`,
 		data: {
-			content,
-			entries,
-			quota: { usage: quota.usage, available: quota.available },
+			structure: {
+				'/app': appEntries.map(e => `${e.kind === 'directory' ? '📁' : '📄'} ${e.name}`),
+				'/app/config': configEntries.map(e => `📄 ${e.name}`),
+			},
+			files: {
+				settings: JSON.parse(settings),
+				readme: readme.substring(0, 50) + '...',
+			},
+			quota: {
+				usage: `${(quota.usage / 1024).toFixed(1)} KB`,
+				available: `${(quota.available / 1024 / 1024).toFixed(1)} MB`,
+			},
 		},
 		code: `import { InMemoryAdapter } from '@mikesaintsg/filesystem'
 
 const adapter = new InMemoryAdapter()
 await adapter.init()
 
-await adapter.writeFile('/hello.txt', 'Hello!')
-const content = await adapter.getFileText('/hello.txt')
+// Create directories and files
+await adapter.createDirectory('/app/config')
+await adapter.writeFile('/app/config/settings.json', '{"theme": "dark"}')
+
+// Read content
+const content = await adapter.getFileText('/app/config/settings.json')
+
+// List entries
+const entries = await adapter.listEntries('/app')
 
 adapter.close()`,
 	}
 }
 
 async function demonstrateCopyFile(): Promise<ExampleResult> {
-	if (!root || !opfsAvailable) {
-		return { success: false, message: 'OPFS not available' }
-	}
+	// Use InMemoryAdapter so this works everywhere
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
 
 	try {
-		const testDir = await root.createDirectory('copy-demo')
+		// Create directory structure
+		await adapter.createDirectory('/demo')
 
 		// Create source file
-		const source = await testDir.createFile('source.txt')
-		await source.write('Content to copy')
+		await adapter.writeFile('/demo/source.txt', 'Content to copy')
 
 		// Copy the file
-		const copy = await testDir.copyFile('source.txt', 'copy.txt')
-		const copyContent = await copy.getText()
+		await adapter.copyFile('/demo/source.txt', '/demo/copy.txt')
+		const copyContent = await adapter.getFileText('/demo/copy.txt')
 
 		// Verify both files exist
-		const files = await testDir.listFiles()
+		const sourceExists = await adapter.hasFile('/demo/source.txt')
+		const copyExists = await adapter.hasFile('/demo/copy.txt')
 
-		// Cleanup
-		await root.removeDirectory('copy-demo', { recursive: true })
+		adapter.close()
 
 		return {
 			success: true,
-			message: `Copied file! Copy content: "${copyContent}"`,
-			data: { files: files.length, copyContent },
+			message: `✅ Copied file! Content: "${copyContent}"`,
+			data: {
+				sourceExists,
+				copyExists,
+				copyContent,
+			},
 			code: `// Copy a file to a new name
 const copy = await directory.copyFile('source.txt', 'copy.txt')
 
@@ -1157,38 +1186,42 @@ const copy2 = await directory.copyFile('source.txt', otherDir)
 // Copy with overwrite option
 await directory.copyFile('source.txt', 'existing.txt', { overwrite: true })`,
 		}
-	} catch {
-		return { success: false, message: 'OPFS operation failed' }
+	} catch (error) {
+		adapter.close()
+		return { success: false, message: `Copy failed: ${error instanceof Error ? error.message : 'Unknown error'}` }
 	}
 }
 
 async function demonstrateMoveFile(): Promise<ExampleResult> {
-	if (!root || !opfsAvailable) {
-		return { success: false, message: 'OPFS not available' }
-	}
+	// Use InMemoryAdapter so this works everywhere
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
 
 	try {
-		const testDir = await root.createDirectory('move-demo')
+		// Create directory structure
+		await adapter.createDirectory('/demo')
 
 		// Create source file
-		const source = await testDir.createFile('source.txt')
-		await source.write('Content to move')
+		await adapter.writeFile('/demo/source.txt', 'Content to move')
 
 		// Move the file
-		const moved = await testDir.moveFile('source.txt', 'moved.txt')
-		const movedContent = await moved.getText()
+		await adapter.moveFile('/demo/source.txt', '/demo/moved.txt')
+		const movedContent = await adapter.getFileText('/demo/moved.txt')
 
 		// Verify source no longer exists
-		const sourceExists = await testDir.hasFile('source.txt')
-		const movedExists = await testDir.hasFile('moved.txt')
+		const sourceExists = await adapter.hasFile('/demo/source.txt')
+		const movedExists = await adapter.hasFile('/demo/moved.txt')
 
-		// Cleanup
-		await root.removeDirectory('move-demo', { recursive: true })
+		adapter.close()
 
 		return {
 			success: true,
-			message: `Moved file! Content: "${movedContent}"`,
-			data: { sourceExists, movedExists },
+			message: `✅ Moved file! Content: "${movedContent}"`,
+			data: {
+				sourceExists,
+				movedExists,
+				result: sourceExists ? '❌ Source still exists' : '✓ Source deleted',
+			},
 			code: `// Move a file to a new name
 const moved = await directory.moveFile('source.txt', 'newname.txt')
 
@@ -1199,39 +1232,45 @@ const moved2 = await directory.moveFile('file.txt', otherDir)
 // Move with overwrite option
 await directory.moveFile('source.txt', 'existing.txt', { overwrite: true })`,
 		}
-	} catch {
-		return { success: false, message: 'OPFS operation failed' }
+	} catch (error) {
+		adapter.close()
+		return { success: false, message: `Move failed: ${error instanceof Error ? error.message : 'Unknown error'}` }
 	}
 }
 
 async function demonstrateExport(): Promise<ExampleResult> {
-	if (!fs || !root || !opfsAvailable) {
-		return { success: false, message: 'OPFS not available' }
-	}
+	// Use InMemoryAdapter so this works everywhere
+	const adapter = new InMemoryAdapter()
+	await adapter.init()
 
 	try {
-		const testDir = await root.createDirectory('export-demo')
-
-		// Create some files
-		const file1 = await testDir.createFile('readme.txt')
-		await file1.write('Hello World')
-		const subdir = await testDir.createDirectory('data')
-		const file2 = await subdir.createFile('config.json')
-		await file2.write('{"exported": true}')
+		// Create a file structure to export
+		await adapter.createDirectory('/project')
+		await adapter.writeFile('/project/readme.txt', '# My Project\nWelcome!')
+		await adapter.createDirectory('/project/src')
+		await adapter.writeFile('/project/src/main.ts', 'console.log("Hello!")')
+		await adapter.writeFile('/project/src/config.json', '{"version": 1}')
 
 		// Export the file system
-		const exported = await fs.export({ includePaths: ['/export-demo'] })
+		const exported = await adapter.export()
 
-		// Cleanup
-		await root.removeDirectory('export-demo', { recursive: true })
+		// Show what was exported
+		const fileEntries = exported.entries.filter(e => e.kind === 'file')
+		const dirEntries = exported.entries.filter(e => e.kind === 'directory')
+
+		adapter.close()
 
 		return {
 			success: true,
-			message: `Exported ${exported.entries.length} entries`,
+			message: `✅ Exported ${exported.entries.length} entries (${dirEntries.length} dirs, ${fileEntries.length} files)`,
 			data: {
 				version: exported.version,
-				entryCount: exported.entries.length,
-				entries: exported.entries.map(e => ({ path: e.path, kind: e.kind })),
+				exportedAt: new Date(exported.exportedAt).toISOString(),
+				entries: exported.entries.map(e => ({
+					path: e.path,
+					kind: e.kind,
+					size: e.kind === 'file' && e.content ? e.content.byteLength : undefined,
+				})),
 			},
 			code: `// Export entire file system
 const exported = await fs.export()
@@ -1246,8 +1285,9 @@ const filtered = await fs.export({ excludePaths: ['/temp'] })
 await anotherFs.import(exported)
 await anotherFs.import(exported, { mergeBehavior: 'skip' })`,
 		}
-	} catch {
-		return { success: false, message: 'OPFS operation failed' }
+	} catch (error) {
+		adapter.close()
+		return { success: false, message: `Export failed: ${error instanceof Error ? error.message : 'Unknown error'}` }
 	}
 }
 
