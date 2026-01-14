@@ -539,4 +539,82 @@ describe('Directory', () => {
 			expect(files.length).toBe(50)
 		})
 	})
+
+	describe('copyFile()', () => {
+		it('copies a file to a new name', async() => {
+			const source = await testDir.createFile('source.txt')
+			await source.write('Original content')
+
+			const dest = await testDir.copyFile('source.txt', 'dest.txt')
+
+			expect(dest.getName()).toBe('dest.txt')
+			expect(await dest.getText()).toBe('Original content')
+			// Source still exists
+			expect(await testDir.hasFile('source.txt')).toBe(true)
+		})
+
+		it('copies a file to another directory', async() => {
+			const subdir = await testDir.createDirectory('subdir')
+			const source = await testDir.createFile('source.txt')
+			await source.write('Content to copy')
+
+			const dest = await testDir.copyFile('source.txt', subdir)
+
+			expect(dest.getName()).toBe('source.txt')
+			expect(await dest.getText()).toBe('Content to copy')
+			expect(await subdir.hasFile('source.txt')).toBe(true)
+		})
+
+		it('throws NotFoundError if source does not exist', async() => {
+			await expect(testDir.copyFile('nonexistent.txt', 'dest.txt')).rejects.toThrow(NotFoundError)
+		})
+
+		it('throws error if destination exists without overwrite', async() => {
+			await testDir.createFile('source.txt')
+			await testDir.createFile('dest.txt')
+
+			await expect(testDir.copyFile('source.txt', 'dest.txt')).rejects.toThrow(TypeMismatchError)
+		})
+
+		it('overwrites destination when overwrite is true', async() => {
+			const source = await testDir.createFile('source.txt')
+			await source.write('New content')
+			const dest = await testDir.createFile('dest.txt')
+			await dest.write('Old content')
+
+			const result = await testDir.copyFile('source.txt', 'dest.txt', { overwrite: true })
+
+			expect(await result.getText()).toBe('New content')
+		})
+	})
+
+	describe('moveFile()', () => {
+		it('moves a file to a new name', async() => {
+			const source = await testDir.createFile('source.txt')
+			await source.write('Content')
+
+			const dest = await testDir.moveFile('source.txt', 'dest.txt')
+
+			expect(dest.getName()).toBe('dest.txt')
+			expect(await dest.getText()).toBe('Content')
+			// Source should be removed
+			expect(await testDir.hasFile('source.txt')).toBe(false)
+		})
+
+		it('moves a file to another directory', async() => {
+			const subdir = await testDir.createDirectory('subdir')
+			const source = await testDir.createFile('source.txt')
+			await source.write('Content to move')
+
+			const dest = await testDir.moveFile('source.txt', subdir)
+
+			expect(dest.getName()).toBe('source.txt')
+			expect(await subdir.hasFile('source.txt')).toBe(true)
+			expect(await testDir.hasFile('source.txt')).toBe(false)
+		})
+
+		it('throws NotFoundError if source does not exist', async() => {
+			await expect(testDir.moveFile('nonexistent.txt', 'dest.txt')).rejects.toThrow(NotFoundError)
+		})
+	})
 })

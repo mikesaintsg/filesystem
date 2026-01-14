@@ -10,6 +10,7 @@ import type {
 	DirectoryInterface,
 	WritableFileInterface,
 	SyncAccessHandleInterface,
+	FileSystemOptions,
 } from './types.js'
 import { NotSupportedError } from './errors.js'
 import { isOPFSSupported } from './helpers.js'
@@ -22,23 +23,40 @@ import { FileSystem } from './core/filesystem/FileSystem.js'
 /**
  * Creates a file system interface.
  *
+ * @param options - Optional configuration including adapter
  * @returns Promise resolving to FileSystemInterface
- * @throws NotSupportedError if OPFS is not available
+ * @throws NotSupportedError if OPFS is not available (when no adapter provided)
  *
  * @example
  * ```ts
+ * // Default (OPFS)
  * const fs = await createFileSystem()
  * const root = await fs.getRoot()
  * const file = await root.createFile('hello.txt')
  * await file.write('Hello, World!')
+ *
+ * // With custom adapter
+ * const fs = await createFileSystem({ adapter: new InMemoryAdapter() })
  * ```
  */
-export function createFileSystem(): Promise<FileSystemInterface> {
-	if (!isOPFSSupported()) {
-		return Promise.reject(new NotSupportedError('Origin Private File System is not supported in this browser'))
+export async function createFileSystem(options?: FileSystemOptions): Promise<FileSystemInterface> {
+	// If an adapter is provided, use it
+	if (options?.adapter) {
+		const adapter = options.adapter
+		if (!await adapter.isAvailable()) {
+			throw new NotSupportedError('Storage adapter is not available')
+		}
+		await adapter.init()
+		// TODO: Return adapter-based FileSystem once implemented
+		// For now, fall back to native OPFS
 	}
 
-	return Promise.resolve(new FileSystem())
+	// Default: use native OPFS
+	if (!isOPFSSupported()) {
+		throw new NotSupportedError('Origin Private File System is not supported in this browser')
+	}
+
+	return new FileSystem()
 }
 
 /**

@@ -80,6 +80,144 @@ export interface RemoveDirectoryOptions {
 }
 
 // ============================================================================
+// Storage Adapter Types
+// ============================================================================
+
+/** Directory entry for adapter iteration (handle-agnostic) */
+export interface AdapterDirectoryEntry {
+	readonly name: string
+	readonly kind: EntryKind
+}
+
+/** Exported file entry for migration */
+export interface ExportedFileEntry {
+	readonly path: string
+	readonly name: string
+	readonly kind: 'file'
+	readonly content: ArrayBuffer
+	readonly lastModified: number
+}
+
+/** Exported directory entry for migration */
+export interface ExportedDirectoryEntry {
+	readonly path: string
+	readonly name: string
+	readonly kind: 'directory'
+}
+
+/** Exported entry union type */
+export type ExportedEntry = ExportedFileEntry | ExportedDirectoryEntry
+
+/** Exported file system data for migration */
+export interface ExportedFileSystem {
+	readonly version: number
+	readonly exportedAt: number
+	readonly entries: readonly ExportedEntry[]
+}
+
+/** Export options */
+export interface ExportOptions {
+	readonly includePaths?: readonly string[]
+	readonly excludePaths?: readonly string[]
+}
+
+/** Import options */
+export interface ImportOptions {
+	readonly overwrite?: boolean
+	readonly mergeBehavior?: 'replace' | 'skip' | 'error'
+}
+
+/** Copy options */
+export interface CopyOptions {
+	readonly overwrite?: boolean
+}
+
+/** Move options */
+export interface MoveOptions {
+	readonly overwrite?: boolean
+}
+
+/**
+ * Storage adapter interface for pluggable backends.
+ * All adapters implement this exact contract with identical method signatures.
+ */
+export interface StorageAdapterInterface {
+	/** Checks if this adapter is available in the current environment. */
+	isAvailable(): Promise<boolean>
+
+	/** Initializes the adapter. */
+	init(): Promise<void>
+
+	/** Closes the adapter and releases resources. */
+	close(): void
+
+	// ---- File Operations ----
+
+	/** Reads file content as text. */
+	getFileText(path: string): Promise<string>
+
+	/** Reads file content as ArrayBuffer. */
+	getFileArrayBuffer(path: string): Promise<ArrayBuffer>
+
+	/** Reads file content as Blob. */
+	getFileBlob(path: string): Promise<Blob>
+
+	/** Gets file metadata. */
+	getFileMetadata(path: string): Promise<FileMetadata>
+
+	/** Writes data to a file. */
+	writeFile(path: string, data: WriteData, options?: WriteOptions): Promise<void>
+
+	/** Appends data to a file. */
+	appendFile(path: string, data: WriteData): Promise<void>
+
+	/** Truncates a file to specified size. */
+	truncateFile(path: string, size: number): Promise<void>
+
+	/** Checks if a file exists at the path. */
+	hasFile(path: string): Promise<boolean>
+
+	/** Removes a file. */
+	removeFile(path: string): Promise<void>
+
+	/** Copies a file from source to destination. */
+	copyFile(sourcePath: string, destinationPath: string, options?: CopyOptions): Promise<void>
+
+	/** Moves a file from source to destination. */
+	moveFile(sourcePath: string, destinationPath: string, options?: MoveOptions): Promise<void>
+
+	// ---- Directory Operations ----
+
+	/** Creates a directory at the path. */
+	createDirectory(path: string): Promise<void>
+
+	/** Checks if a directory exists at the path. */
+	hasDirectory(path: string): Promise<boolean>
+
+	/** Removes a directory. */
+	removeDirectory(path: string, options?: RemoveDirectoryOptions): Promise<void>
+
+	/** Lists entries in a directory. */
+	listEntries(path: string): Promise<readonly AdapterDirectoryEntry[]>
+
+	// ---- Quota & Migration ----
+
+	/** Gets storage quota information. */
+	getQuota(): Promise<StorageQuota>
+
+	/** Exports the file system to a portable format. */
+	export(options?: ExportOptions): Promise<ExportedFileSystem>
+
+	/** Imports a file system from exported data. */
+	import(data: ExportedFileSystem, options?: ImportOptions): Promise<void>
+}
+
+/** Options for creating a file system */
+export interface FileSystemOptions {
+	readonly adapter?: StorageAdapterInterface
+}
+
+// ============================================================================
 // Picker Option Types
 // ============================================================================
 
@@ -276,6 +414,22 @@ export interface DirectoryInterface {
 	 * @param name - File name
 	 */
 	removeFile(name: string): Promise<void>
+
+	/**
+	 * Copies a file to a destination
+	 * @param source - Source file name
+	 * @param destination - Destination file name or directory
+	 * @param options - Copy options
+	 */
+	copyFile(source: string, destination: string | DirectoryInterface, options?: CopyOptions): Promise<FileInterface>
+
+	/**
+	 * Moves a file to a destination
+	 * @param source - Source file name
+	 * @param destination - Destination file name or directory
+	 * @param options - Move options
+	 */
+	moveFile(source: string, destination: string | DirectoryInterface, options?: MoveOptions): Promise<FileInterface>
 
 	// ---- Directory Operations ----
 
@@ -518,4 +672,24 @@ export interface FileSystemInterface {
 	 * @param files - FileList from input element
 	 */
 	fromFiles(files: FileList): Promise<readonly FileInterface[]>
+
+	// ---- Migration ----
+
+	/**
+	 * Exports the file system to a portable format
+	 * @param options - Export options
+	 */
+	export(options?: ExportOptions): Promise<ExportedFileSystem>
+
+	/**
+	 * Imports a file system from exported data
+	 * @param data - Exported file system data
+	 * @param options - Import options
+	 */
+	import(data: ExportedFileSystem, options?: ImportOptions): Promise<void>
+
+	// ---- Lifecycle ----
+
+	/** Closes the file system and releases resources */
+	close(): void
 }

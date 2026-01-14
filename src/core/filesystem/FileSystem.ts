@@ -13,6 +13,10 @@ import type {
 	OpenFilePickerOptions,
 	SaveFilePickerOptions,
 	DirectoryPickerOptions,
+	ExportedFileSystem,
+	ExportedEntry,
+	ExportOptions,
+	ImportOptions,
 } from '../../types.js'
 import { NotSupportedError, AbortError, wrapDOMException } from '../../errors.js'
 import { File as FileWrapper } from '../file/File.js'
@@ -332,5 +336,117 @@ export class FileSystem implements FileSystemInterface {
 		}
 
 		return Promise.resolve(results)
+	}
+
+	// ---- Migration ----
+
+	/**
+	 * Exports the file system to a portable format
+	 * @param options - Export options
+	 */
+	async export(options?: ExportOptions): Promise<ExportedFileSystem> {
+		const root = await this.getRoot()
+		const entries: ExportedEntry[] = []
+
+		// Walk the entire directory tree
+		for await (const walkEntry of root.walk()) {
+			const fullPath = '/' + [...walkEntry.path, walkEntry.entry.name].join('/')
+
+			// Check include/exclude paths
+			if (options?.includePaths && options.includePaths.length > 0) {
+				const included = options.includePaths.some(p => fullPath.startsWith(p))
+				if (!included) continue
+			}
+
+			if (options?.excludePaths && options.excludePaths.length > 0) {
+				const excluded = options.excludePaths.some(p => fullPath.startsWith(p))
+				if (excluded) continue
+			}
+
+			if (walkEntry.entry.kind === 'file') {
+				const fileHandle = walkEntry.entry.handle as FileSystemFileHandle
+				const file = await fileHandle.getFile()
+				const content = await file.arrayBuffer()
+				entries.push({
+					path: fullPath,
+					name: walkEntry.entry.name,
+					kind: 'file',
+					content,
+					lastModified: file.lastModified,
+				})
+			} else {
+				entries.push({
+					path: fullPath,
+					name: walkEntry.entry.name,
+					kind: 'directory',
+				})
+			}
+		}
+
+		return {
+			version: 1,
+			exportedAt: Date.now(),
+			entries,
+		}
+	}
+
+	/**
+	 * Imports a file system from exported data
+	 * @param data - Exported file system data
+	 * @param options - Import options
+	 */
+	async import(data: ExportedFileSystem, options?: ImportOptions): Promise<void> {
+		const root = await this.getRoot()
+		const mergeBehavior = options?.mergeBehavior ?? 'replace'
+
+		// Sort entries to process directories before files
+		const sortedEntries = [...data.entries].sort((a, b) => {
+			if (a.kind === 'directory' && b.kind !== 'directory') return -1
+			if (a.kind !== 'directory' && b.kind === 'directory') return 1
+			return a.path.localeCompare(b.path)
+		})
+
+		for (const entry of sortedEntries) {
+			// Parse path segments (skip leading empty string from leading /)
+			const segments = entry.path.split('/').filter(s => s.length > 0)
+			if (segments.length === 0) continue
+
+			if (entry.kind === 'directory') {
+				// Create the directory path
+				await root.createPath(...segments)
+			} else {
+				// Navigate to parent directory
+				const parentSegments = segments.slice(0, -1)
+				const fileName = segments[segments.length - 1]
+				if (fileName === undefined) continue
+
+				let targetDir: DirectoryInterface = root
+				if (parentSegments.length > 0) {
+					targetDir = await root.createPath(...parentSegments)
+				}
+
+				// Check if file exists
+				const exists = await targetDir.hasFile(fileName)
+				if (exists) {
+					if (mergeBehavior === 'skip') continue
+					if (mergeBehavior === 'error') {
+						throw new Error(`File already exists: ${entry.path}`)
+					}
+					// 'replace' - continue and overwrite
+				}
+
+				// Create file and write content
+				const file = await targetDir.createFile(fileName)
+				await file.write(entry.content)
+			}
+		}
+	}
+
+	// ---- Lifecycle ----
+
+	/** Closes the file system and releases resources */
+	close(): void {
+		// Currently OPFS doesn't require explicit cleanup
+		// This is a no-op but implements the interface for future adapter support
 	}
 }
