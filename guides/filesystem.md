@@ -1,8 +1,6 @@
 # @mikesaintsg/filesystem API Guide
 
-> **A focused File System wrapper that enhances native browser APIs without abstracting them away**
-
-This guide provides comprehensive documentation for all features, APIs, and usage patterns of the `@mikesaintsg/filesystem` library.
+> **Zero-dependency, type-safe File System Access API wrapper with OPFS-first architecture.**
 
 ---
 
@@ -29,41 +27,45 @@ This guide provides comprehensive documentation for all features, APIs, and usag
 19. [Performance Tips](#performance-tips)
 20. [Browser Compatibility](#browser-compatibility)
 21. [API Reference](#api-reference)
+22. [License](#license)
 
 ---
 
 ## Introduction
 
-This library provides a type-safe, Promise-based wrapper around browser File System APIs that **enhances** the native APIs without abstracting them away. Developers get:
-
-- **Type safety**: Strong TypeScript types with full strict mode support
-- **Promise-based operations**: Async/await instead of complex callback patterns
-- **Unified interface**: Single API surface across OPFS, File System Access API, and legacy APIs
-- **Pluggable storage**: Swap storage backends with adapters (OPFS, InMemory, IndexedDB)
-- **Native access**: Full access to underlying browser handles via `.native` property
-- **Zero dependencies**: Built entirely on Web Platform APIs
-
 ### Value Proposition
 
-| Native Browser APIs                    | This Library                           |
-|----------------------------------------|----------------------------------------|
-| Multiple inconsistent APIs             | Unified interface across all sources   |
-| Callback-based directory iteration     | Async generators with early break      |
-| No type safety                         | Full TypeScript strict mode support    |
-| Manual permission management           | Simplified permission helpers          |
-| Complex multi-batch `readEntries`      | Automatic batching for directory reads |
-| No path-based operations               | `mkdir -p` style path creation         |
+`@mikesaintsg/filesystem` provides a unified API for browser file system operations: 
+
+- **OPFS-first architecture** — Origin Private File System as the primary, native storage mechanism
+- **Zero dependencies** — Built entirely on native browser APIs
+- **Full TypeScript support** — Type-safe file and directory operations
+- **Adapter pattern** — Pluggable storage backends for different environments
+- **Migration support** — Export/import for seamless adapter transitions
+- **Escape hatches** — Access native handles when needed
 
 ### API Landscape
 
-This library wraps and unifies four distinct browser APIs:
+| API | Purpose | Browser Support | Primary Use |
+|-----|---------|-----------------|-------------|
+| **OPFS** | Private file storage | All modern browsers | ✅ Primary |
+| **File System Access API** | User file access | Chromium only | Fallback/User files |
+| **File API** | Read-only file access | All browsers | Input handling |
+| **Drag & Drop** | File drop handling | All browsers | User interaction |
 
-| API                                | Read | Write | User Prompt | Origin-Private | Browser Support    |
-|------------------------------------|------|-------|-------------|----------------|--------------------|
-| **File API**                       | ✅   | ❌    | Via input   | N/A            | Universal          |
-| **File and Directory Entries API** | ✅   | ❌    | Via drag-drop | N/A          | Chromium, Firefox  |
-| **File System Access API**         | ✅   | ✅    | Native dialogs | ❌           | Chromium only      |
-| **Origin Private File System**     | ✅   | ✅    | None needed | ✅             | All modern browsers |
+### When to Use filesystem vs Other Packages
+
+| Use Case | Recommendation |
+|----------|----------------|
+| Large binary files (> 1MB) | ✅ Use filesystem (OPFS) |
+| Streaming read/write | ✅ Use filesystem |
+| File-like operations (seek, truncate) | ✅ Use filesystem |
+| High-performance I/O in Workers | ✅ Use filesystem (Sync Access) |
+| User-selected files | ✅ Use filesystem (pickers/drag-drop) |
+| Structured data with queries | Use `@mikesaintsg/indexeddb` |
+| Simple key-value storage | Use `@mikesaintsg/storage` |
+| Small blobs with metadata queries | Use indexeddb |
+| Blobs < 1MB with relationships | Use indexeddb |
 
 ---
 
@@ -77,60 +79,49 @@ npm install @mikesaintsg/filesystem
 
 ## Quick Start
 
-```typescript
+```ts
 import { createFileSystem } from '@mikesaintsg/filesystem'
 
-// 1. Create file system interface
+// Create file system (uses OPFS by default)
 const fs = await createFileSystem()
 
-// 2. Get the OPFS root directory
+// Get OPFS root directory
 const root = await fs.getRoot()
 
-// 3. Create a file and write content
-const file = await root.createFile('hello.txt')
-await file.write('Hello, File System!')
+// Create a file
+const file = await root. createFile('hello.txt')
+await file.write('Hello, World!')
 
-// 4. Read the file back
-const content = await file.getText()
-console.log(content) // 'Hello, File System!'
+// Read the file
+const content = await file. getText()
+console.log(content) // 'Hello, World!'
 
-// 5. Create nested directories
-const cache = await root.createPath('data', 'cache', 'images')
+// Create nested directories
+const docs = await root.createPath('documents', 'projects')
+const readme = await docs.createFile('README.md')
+await readme.write('# My Project')
 
-// 6. List directory contents
+// List directory contents
 for await (const entry of root.entries()) {
-	console.log(`${entry.kind}: ${entry.name}`)
+	console.log(entry.name, entry.kind)
 }
-
-// 7. Check storage quota
-const quota = await fs.getQuota()
-console.log(`Used: ${quota.percentUsed}%`)
 ```
 
 ### User File Access (Chromium Only)
 
-```typescript
-import { createFileSystem } from '@mikesaintsg/filesystem'
-
-const fs = await createFileSystem()
-
-// Check if user file access is available
+```ts
+// Check if file pickers are supported
 if (fs.isUserAccessSupported()) {
 	// Open file picker
-	const files = await fs.showOpenFilePicker({
-		types: [{ accept: { 'text/*': ['.txt', '.md'] } }]
-	})
-
-	for (const file of files) {
-		const content = await file.getText()
-		console.log(file.getName(), content)
-	}
+	const [file] = await fs.showOpenFilePicker()
+	const content = await file.getText()
+	console.log(content)
 
 	// Save file picker
 	const saveFile = await fs.showSaveFilePicker({
-		suggestedName: 'document.txt'
+		suggestedName: 'document.txt',
 	})
-	await saveFile.write('Saved content')
+	await saveFile.write('Document content')
 
 	// Directory picker
 	const dir = await fs.showDirectoryPicker()
@@ -146,47 +137,53 @@ if (fs.isUserAccessSupported()) {
 
 ### Design Philosophy
 
-Following the same patterns as `@mikesaintsg/indexeddb`:
+1. **OPFS is primary** — The Origin Private File System is the native, performant way to handle files in browsers.  It's available in all modern browsers and doesn't require user permission.
 
-1. **Enhance, don't abstract**: Expose native handles via `.native` property
-2. **Promise-based**: Convert all callbacks to async/await
-3. **Type-safe**: Strict TypeScript types without `any`, `!`, or unsafe casts
-4. **Zero dependencies**: Use only native platform APIs
-5. **Layered access**: OPFS for storage, File System Access for user interaction
+2. **Adapters fill gaps** — When OPFS isn't available (e.g., not served from a server), adapters provide fallback behavior with the same API.
+
+3. **Seamless migration** — Export/import enables moving between adapters without data loss.  Start with InMemoryAdapter during development, migrate to OPFS in production.
+
+4. **Native when needed** — Every wrapper exposes its underlying native handle for advanced use cases or integration with other libraries.
 
 ### Entry Kinds
 
-Every file system entry is either a file or directory:
-
-```typescript
+```ts
 type EntryKind = 'file' | 'directory'
 ```
 
+Every entry in the file system is either a file or directory.  This discriminator is available on all entry objects and enables type narrowing.
+
 ### Method Semantics
 
-The library follows consistent patterns for data access, matching the IndexedDB wrapper:
+This library follows consistent naming conventions:
 
-| Method                  | Missing Entry            | Use Case                        |
-|-------------------------|--------------------------|---------------------------------|
-| `getFile()`             | Returns `undefined`      | Optional lookup, check result   |
-| `resolveFile()`         | Throws `NotFoundError`   | Must exist, handle error        |
-| `createFile()`          | Creates new file         | Always creates (overwrites)     |
-| `getDirectory()`        | Returns `undefined`      | Optional lookup, check result   |
-| `resolveDirectory()`    | Throws `NotFoundError`   | Must exist, handle error        |
-| `createDirectory()`     | Creates new directory    | Always creates if not exists    |
-| `removeFile()`          | Throws `NotFoundError`   | Delete file, must exist         |
-| `removeDirectory()`     | Throws `NotFoundError`   | Delete directory, must exist    |
+| Method | Returns | When Not Found | Use Case |
+|--------|---------|----------------|----------|
+| `getFile(name)` | `FileInterface \| undefined` | Returns `undefined` | Optional lookup |
+| `resolveFile(name)` | `FileInterface` | Throws `NotFoundError` | Required lookup |
+| `createFile(name)` | `FileInterface` | Creates new (overwrites) | Always get a file |
+| `hasFile(name)` | `boolean` | Returns `false` | Existence check |
+| `removeFile(name)` | `void` | No-op | Delete |
+
+The same pattern applies to directory methods:  `getDirectory`, `resolveDirectory`, `createDirectory`, `hasDirectory`, `removeDirectory`.
 
 ### Storage Layers
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    FileSystemInterface                       │
+│                    Your Application                          │
 ├─────────────────────────────────────────────────────────────┤
-│  getRoot()              → OPFS (universal support)          │
-│  showOpenFilePicker()   → File System Access (Chromium)     │
-│  fromDataTransferItem() → Entries API fallback              │
-│  fromFile()             → File API (input elements)         │
+│                 @mikesaintsg/filesystem                      │
+│                    (Unified API)                             │
+├─────────────────────────────────────────────────────────────┤
+│                   Storage Adapter                            │
+│  ┌───────────────────┬─────────────────────────────────┐    │
+│  │   OPFSAdapter     │      InMemoryAdapter            │    │
+│  │   (Primary)       │      (Fallback/Testing)         │    │
+│  └───────────────────┴─────────────────────────────────┘    │
+├─────────────────────────────────────────────────────────────┤
+│                    Browser APIs                              │
+│     OPFS  |  File System Access API  |  File API            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -194,94 +191,100 @@ The library follows consistent patterns for data access, matching the IndexedDB 
 
 ## Storage Adapters
 
-The library supports pluggable storage backends through the adapter pattern. This allows you to swap storage implementations without changing your application code.
-
 ### Built-in Adapters
 
-| Adapter           | Description                          | Use Case                          |
-|-------------------|--------------------------------------|-----------------------------------|
-| `OPFSAdapter`     | Origin Private File System (default) | Production, persistent storage    |
-| `InMemoryAdapter` | In-memory Map storage                | Testing, temporary data           |
-| `IndexedDBAdapter`| IndexedDB-based storage              | Fallback when OPFS unavailable    |
+| Adapter | Use Case | Persistence | Performance | Browser Support |
+|---------|----------|-------------|-------------|-----------------|
+| `OPFSAdapter` | Production (default) | ✅ Persistent | Fast | All modern |
+| `InMemoryAdapter` | Testing, fallback | ❌ Ephemeral | Fastest | All |
 
 ### Using Adapters
 
-```typescript
-import { createFileSystem, InMemoryAdapter, OPFSAdapter } from '@mikesaintsg/filesystem'
+```ts
+import {
+	createFileSystem,
+	createOPFSAdapter,
+	createInMemoryAdapter,
+} from '@mikesaintsg/filesystem'
 
-// Default: Uses OPFS (OPFSAdapter)
+// Default:  OPFS adapter (recommended for production)
 const fs = await createFileSystem()
 
 // Explicit OPFS adapter
-const opfsFS = await createFileSystem({ adapter: new OPFSAdapter() })
+const fs = await createFileSystem({
+	adapter: createOPFSAdapter(),
+})
 
-// In-memory adapter (great for testing)
-const memFS = await createFileSystem({ adapter: new InMemoryAdapter() })
-
-// Same API regardless of adapter
-const root = await fs.getRoot()
-const file = await root.createFile('config.json')
-await file.write('{"version": 1}')
+// In-memory adapter for testing
+const fs = await createFileSystem({
+	adapter: createInMemoryAdapter(),
+})
 ```
 
 ### InMemoryAdapter
 
-Perfect for unit testing and temporary data that doesn't need to persist:
+Useful for: 
+- Unit testing without browser APIs
+- Environments where OPFS isn't available
+- Temporary file operations
+- Development and prototyping
 
-```typescript
-import { InMemoryAdapter } from '@mikesaintsg/filesystem'
+```ts
+import { createFileSystem, createInMemoryAdapter } from '@mikesaintsg/filesystem'
 
-// Direct adapter usage (low-level)
-const adapter = new InMemoryAdapter()
-await adapter.init()
+const fs = await createFileSystem({
+	adapter: createInMemoryAdapter(),
+})
 
-// Write directly
-await adapter.writeFile('/config.json', '{"debug": true}')
-const content = await adapter.getFileText('/config.json')
+// Works exactly like OPFS, but data is lost on page refresh
+const root = await fs.getRoot()
+const file = await root.createFile('temp.txt')
+await file.write('Temporary data')
 
-// Create directories
-await adapter.createDirectory('/data')
-await adapter.writeFile('/data/cache.json', '[]')
-
-// List entries
-const entries = await adapter.listEntries('/data')
-
-// Clean up
-adapter.close()
+// All operations work the same
+const content = await file.getText()
+console.log(content) // 'Temporary data'
 ```
 
 ### Adapter Availability Check
 
-```typescript
-const adapter = new OPFSAdapter()
-
-if (await adapter.isAvailable()) {
-	await adapter.init()
-	// Use adapter
+```ts
+// Check if OPFS is available
+if (fs.isOPFSSupported()) {
+	console.log('OPFS is available')
 } else {
-	// Fall back to InMemoryAdapter
-	const fallback = new InMemoryAdapter()
-	await fallback.init()
+	console.log('OPFS not available - using fallback')
+}
+
+// Check if user file access is available (Chromium only)
+if (fs.isUserAccessSupported()) {
+	console.log('File pickers available')
 }
 ```
 
 ### Automatic Fallback Pattern
 
-```typescript
-import { createFileSystem, OPFSAdapter, InMemoryAdapter } from '@mikesaintsg/filesystem'
+```ts
+import {
+	createFileSystem,
+	createOPFSAdapter,
+	createInMemoryAdapter,
+} from '@mikesaintsg/filesystem'
 
-async function initFileSystem() {
-	const opfs = new OPFSAdapter()
-	
-	if (await opfs.isAvailable()) {
-		return createFileSystem({ adapter: opfs })
+async function createFileSystemWithFallback(): Promise<FileSystemInterface> {
+	const opfsAdapter = createOPFSAdapter()
+
+	if (await opfsAdapter.isAvailable()) {
+		console.log('Using OPFS storage')
+		return createFileSystem({ adapter: opfsAdapter })
 	}
-	
-	console.log('OPFS unavailable, using in-memory storage')
-	return createFileSystem({ adapter: new InMemoryAdapter() })
+
+	console.warn('OPFS not available, using in-memory storage')
+	console.warn('Data will not persist across page reloads')
+	return createFileSystem({ adapter: createInMemoryAdapter() })
 }
 
-const fs = await initFileSystem()
+const fs = await createFileSystemWithFallback()
 ```
 
 ---
@@ -290,46 +293,67 @@ const fs = await initFileSystem()
 
 ### Creating the File System Interface
 
-```typescript
+```ts
 import { createFileSystem } from '@mikesaintsg/filesystem'
 
+// Default configuration (OPFS)
 const fs = await createFileSystem()
+
+// With explicit adapter
+const fs = await createFileSystem({
+	adapter: createOPFSAdapter(),
+})
 ```
 
 ### getRoot() — OPFS Access
 
-Get the root directory of the Origin Private File System:
-
-```typescript
+```ts
 const root = await fs.getRoot()
+// root is DirectoryInterface pointing to OPFS root
 
-// Root is a DirectoryInterface
-const file = await root.createFile('app-data.json')
-await file.write(JSON.stringify({ version: 1 }))
+// Now you can create files and directories
+const file = await root. createFile('data.json')
+const subdir = await root.createDirectory('documents')
 ```
 
 ### getQuota() — Storage Information
 
-```typescript
+```ts
 const quota = await fs.getQuota()
+// {
+//   usage: 1234567,        // Bytes currently used
+//   quota: 1073741824,     // Total quota available
+//   available: 1072506857, // Bytes remaining
+//   percentUsed: 0.115,    // Usage as percentage (0-1)
+// }
 
-console.log(`Usage: ${quota.usage} bytes`)
-console.log(`Quota: ${quota.quota} bytes`)
-console.log(`Available: ${quota.available} bytes`)
-console.log(`Used: ${quota.percentUsed.toFixed(1)}%`)
+if (quota.percentUsed > 0.9) {
+	console.warn('Storage nearly full!')
+}
 ```
 
-### isUserAccessSupported() — Feature Detection
+### isOPFSSupported() — OPFS Feature Detection
 
-Check if File System Access API picker dialogs are available:
+```ts
+if (fs.isOPFSSupported()) {
+	// Full OPFS functionality available
+	const root = await fs.getRoot()
+} else {
+	// Running with fallback adapter
+	console.warn('OPFS not supported in this environment')
+}
+```
 
-```typescript
+### isUserAccessSupported() — Picker Feature Detection
+
+```ts
 if (fs.isUserAccessSupported()) {
-	// Safe to use showOpenFilePicker, showSaveFilePicker, showDirectoryPicker
+	// showOpenFilePicker, showSaveFilePicker, showDirectoryPicker available
 	const files = await fs.showOpenFilePicker()
 } else {
-	// Fall back to <input type="file"> or drag-drop
-	console.log('File pickers not available in this browser')
+	// Chromium-only features not available
+	// Use <input type="file"> instead
+	console.log('File pickers not supported, use file input')
 }
 ```
 
@@ -337,25 +361,25 @@ if (fs.isUserAccessSupported()) {
 
 ## File Operations
 
-Access files through `DirectoryInterface.getFile()`, `DirectoryInterface.createFile()`, or picker dialogs.
-
 ### Reading Files
 
-```typescript
-// Get text content
+```ts
+const file = await root.resolveFile('document.txt')
+
+// As text (UTF-8)
 const text = await file.getText()
 
-// Get binary content
+// As ArrayBuffer (binary)
 const buffer = await file.getArrayBuffer()
 
-// Get as Blob
+// As Blob
 const blob = await file.getBlob()
 
-// Get as readable stream (for large files)
+// As ReadableStream (for large files)
 const stream = file.getStream()
 const reader = stream.getReader()
 while (true) {
-	const { done, value } = await reader.read()
+	const { done, value } = await reader. read()
 	if (done) break
 	processChunk(value)
 }
@@ -363,289 +387,354 @@ while (true) {
 
 ### Writing Files
 
-Writing is atomic by default—content is written to a temp file and swapped on completion:
+```ts
+const file = await root.createFile('output.txt')
 
-```typescript
 // Write string
 await file.write('Hello, World!')
 
-// Write binary data
-await file.write(new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f]))
+// Write ArrayBuffer
+const buffer = new TextEncoder().encode('Binary data')
+await file.write(buffer)
 
 // Write Blob
-await file.write(new Blob(['Hello'], { type: 'text/plain' }))
+const blob = new Blob(['Blob content'], { type: 'text/plain' })
+await file.write(blob)
 
-// Write at specific position
-await file.write('Inserted', { position: 10 })
+// Write ReadableStream
+const response = await fetch('https://example.com/data')
+await file.write(response.body)
 
-// Keep existing data when writing at position
-await file.write('Patch', { position: 5, keepExistingData: true })
+// Write with options
+await file.write('Additional content', {
+	position: 100,          // Start writing at byte 100
+	keepExistingData: true, // Don't truncate existing content
+})
 ```
 
 ### Appending to Files
 
-```typescript
+```ts
 // Append to end of file
-await file.append(' - Appended text')
+await file.append('More content\n')
+await file.append(additionalBuffer)
 
-// Append binary data
-await file.append(new Uint8Array([0x0A, 0x0A])) // Two newlines
+// Equivalent to:
+// await file.write(data, { position: fileSize, keepExistingData: true })
 ```
 
 ### Truncating Files
 
-```typescript
+```ts
 // Truncate to specific size
-await file.truncate(100) // File is now exactly 100 bytes
+await file.truncate(1000) // Keep first 1000 bytes
 
-// Empty the file
+// Clear file completely
 await file.truncate(0)
 ```
 
 ### File Metadata
 
-```typescript
-const name = file.getName() // 'document.txt'
-
+```ts
 const metadata = await file.getMetadata()
-console.log(metadata.name)         // 'document.txt'
-console.log(metadata.size)         // 1024
-console.log(metadata.type)         // 'text/plain'
-console.log(metadata.lastModified) // 1704067200000 (timestamp)
+// {
+//   name: 'document.txt',
+//   size: 1234,
+//   type: 'text/plain',
+//   lastModified: 1699123456789,
+// }
+
+// Just the name (synchronous)
+const name = file.getName()
 ```
 
 ### Permissions
 
-```typescript
+For files obtained via pickers (not OPFS), permissions may need to be requested:
+
+```ts
 // Check current permissions
 const canRead = await file.hasReadPermission()
 const canWrite = await file.hasWritePermission()
 
-// Request write permission (shows prompt to user)
-const granted = await file.requestWritePermission()
-if (granted) {
-	await file.write('Now I can write!')
+// Request write permission (shows browser prompt)
+if (! canWrite) {
+	const granted = await file.requestWritePermission()
+	if (granted) {
+		await file.write('Now I can write!')
+	}
 }
 ```
 
 ### Comparing Files
 
-```typescript
+```ts
+const file1 = await root.resolveFile('a.txt')
+const file2 = await root.resolveFile('b.txt')
+
 // Check if two handles point to the same file
-const isSame = await file1.isSameEntry(file2)
+const same = await file1.isSameEntry(file2)
 ```
 
 ---
 
 ## Directory Operations
 
-Access directories through `fs.getRoot()`, picker dialogs, or from other directories.
-
 ### Getting and Creating Files
 
-```typescript
+```ts
 // Get file (returns undefined if not found)
-const file = await directory.getFile('config.json')
+const file = await dir.getFile('readme.txt')
 if (file) {
-	const config = JSON.parse(await file.getText())
+	const content = await file.getText()
 }
 
 // Resolve file (throws NotFoundError if not found)
 try {
-	const file = await directory.resolveFile('required.txt')
-	console.log(await file.getText())
+	const file = await dir.resolveFile('readme.txt')
+	const content = await file.getText()
 } catch (error) {
-	if (error instanceof NotFoundError) {
-		console.log('File does not exist')
+	if (isFileSystemError(error) && error.code === 'NOT_FOUND') {
+		console.log('File not found')
 	}
 }
 
-// Create file (always creates, overwrites if exists)
-const file = await directory.createFile('new-file.txt')
+// Create file (creates new or overwrites existing)
+const file = await dir. createFile('new-file.txt')
 await file.write('Initial content')
 
-// Check if file exists
-const exists = await directory.hasFile('maybe.txt')
+// Check existence
+const exists = await dir.hasFile('readme.txt')
+
+// Remove file
+await dir.removeFile('readme.txt')
 ```
 
 ### Getting and Creating Directories
 
-```typescript
+```ts
 // Get subdirectory (returns undefined if not found)
-const subdir = await directory.getDirectory('cache')
+const subdir = await dir.getDirectory('src')
+if (subdir) {
+	for await (const entry of subdir. entries()) {
+		console.log(entry.name)
+	}
+}
 
 // Resolve subdirectory (throws NotFoundError if not found)
-const subdir = await directory.resolveDirectory('must-exist')
+const subdir = await dir.resolveDirectory('src')
 
-// Create subdirectory (creates if not exists)
-const subdir = await directory.createDirectory('new-folder')
+// Create subdirectory (creates if not exists, returns existing if exists)
+const subdir = await dir.createDirectory('src')
 
-// Check if directory exists
-const exists = await directory.hasDirectory('maybe-folder')
+// Check existence
+const exists = await dir.hasDirectory('src')
+
+// Remove empty directory
+await dir.removeDirectory('empty-dir')
+
+// Remove directory with contents
+await dir.removeDirectory('full-dir', { recursive: true })
 ```
 
 ### Removing Entries
 
-```typescript
-// Remove a file
-await directory.removeFile('old-file.txt')
+```ts
+// Remove file
+await dir.removeFile('file. txt')
 
-// Remove an empty directory
-await directory.removeDirectory('empty-folder')
+// Remove empty directory
+await dir.removeDirectory('empty-dir')
 
-// Remove a directory with contents
-await directory.removeDirectory('full-folder', { recursive: true })
+// Remove directory with all contents (recursive)
+await dir.removeDirectory('project', { recursive: true })
 ```
 
 ### Path-Based Operations
 
-Create nested directories like `mkdir -p`:
+```ts
+// Resolve nested path to file or directory
+const entry = await root.resolvePath('src', 'components', 'Button.tsx')
+// Returns FileInterface | DirectoryInterface | undefined
 
-```typescript
-// Create path: data/cache/images (creates all intermediate directories)
-const imagesDir = await root.createPath('data', 'cache', 'images')
-
-// Resolve path to file or directory
-const entry = await root.resolvePath('data', 'cache', 'settings.json')
-if (entry && entry.kind === 'file') {
-	const file = entry as FileInterface
-	console.log(await file.getText())
+if (entry) {
+	// Use type narrowing based on what you expect
+	// or check the entry type
 }
+
+// Create nested directories (like mkdir -p)
+const deep = await root.createPath('src', 'components', 'ui', 'buttons')
+// Creates all intermediate directories that don't exist
+// Returns the final DirectoryInterface
+
+// Now create a file in the nested directory
+const file = await deep.createFile('PrimaryButton.tsx')
 ```
 
 ### Directory Name
 
-```typescript
-const name = directory.getName() // 'my-folder'
+```ts
+const name = dir.getName()
+// For root directory, this is typically an empty string
 ```
 
 ### Comparing Directories
 
-```typescript
+```ts
 // Check if two handles point to the same directory
-const isSame = await dir1.isSameEntry(dir2)
+const same = await dir1.isSameEntry(dir2)
 
-// Get relative path from ancestor to descendant
-const path = await parentDir.resolve(childFile)
-// path: ['subdir', 'nested', 'file.txt'] or null if not a descendant
+// Get relative path from parent to descendant
+const path = await parent.resolve(descendant)
+// Returns:  readonly string[] like ['src', 'components', 'Button.tsx']
+// Returns: null if descendant is not inside parent
 ```
 
 ---
 
 ## Convenience Methods
 
-Common file operations made simple with `copyFile()` and `moveFile()`.
-
 ### copyFile() — Copy a File
 
-Copy a file within a directory or to another directory:
+```ts
+// Copy within same directory (new name)
+const copy = await dir.copyFile('original.txt', 'copy.txt')
 
-```typescript
-// Copy to a new name in the same directory
-const copy = await directory.copyFile('original.txt', 'backup.txt')
+// Copy to another directory (keeps same name)
+const copy = await dir.copyFile('original.txt', targetDir)
 
-// Copy to another directory (keeps original name)
-const archive = await root.createDirectory('archive')
-const archived = await directory.copyFile('report.txt', archive)
-
-// Copy with overwrite option
-await directory.copyFile('source.txt', 'existing.txt', { overwrite: true })
+// Copy with overwrite (default is to fail if destination exists)
+const copy = await dir.copyFile('original.txt', 'copy.txt', {
+	overwrite: true,
+})
 ```
 
 ### moveFile() — Move/Rename a File
 
-Move a file to a new name or another directory:
+```ts
+// Rename file in same directory
+const moved = await dir.moveFile('old-name.txt', 'new-name.txt')
 
-```typescript
-// Rename a file (same directory)
-await directory.moveFile('old-name.txt', 'new-name.txt')
+// Move to another directory (keeps same name)
+const moved = await dir.moveFile('file.txt', targetDir)
 
-// Move to another directory (keeps original name)
-const trash = await root.createDirectory('trash')
-await directory.moveFile('delete-me.txt', trash)
-
-// Move with overwrite option
-await directory.moveFile('source.txt', 'existing.txt', { overwrite: true })
+// Move with overwrite
+const moved = await dir.moveFile('file.txt', 'target.txt', {
+	overwrite: true,
+})
 ```
 
 ### Copy vs Move
 
-| Operation  | Source File | Returns            |
-|------------|-------------|-------------------|
-| `copyFile` | Preserved   | New `FileInterface` |
-| `moveFile` | Deleted     | Moved `FileInterface` |
+| Operation | Source File | Creates New | Performance | Use Case |
+|-----------|-------------|-------------|-------------|----------|
+| `copyFile` | Preserved | Yes | Reads + Writes data | Backup, duplicate |
+| `moveFile` | Removed | Effectively | Usually faster | Reorganize, rename |
 
 ---
 
 ## Export & Import
 
-Migrate data between file systems or create backups with `export()` and `import()`.
-
 ### Exporting a File System
 
-```typescript
-// Export entire file system
+```ts
 const exported = await fs.export()
+// {
+//   version: 1,
+//   exportedAt: 1699123456789,
+//   entries: [
+//     { path: '/documents', name: 'documents', kind: 'directory' },
+//     {
+//       path: '/documents/readme.txt',
+//       name: 'readme.txt',
+//       kind: 'file',
+//       content: ArrayBuffer,
+//       lastModified: 1699123456789,
+//     },
+//   ],
+// }
 
-console.log(`Exported ${exported.entries.length} entries`)
-console.log(`Exported at: ${new Date(exported.exportedAt).toISOString()}`)
-
-// Export specific paths only
-const partial = await fs.export({
-	includePaths: ['/data', '/config']
+// Export with filters
+const exported = await fs.export({
+	includePaths: ['/documents', '/images'],
+	excludePaths: ['/documents/temp', '/images/cache'],
 })
 
-// Exclude certain paths
-const filtered = await fs.export({
-	excludePaths: ['/temp', '/cache']
+// Save to downloadable file
+const json = JSON.stringify(exported, (key, value) => {
+	// Handle ArrayBuffer serialization
+	if (value instanceof ArrayBuffer) {
+		return { __type: 'ArrayBuffer', data: Array.from(new Uint8Array(value)) }
+	}
+	return value
 })
+const blob = new Blob([json], { type: 'application/json' })
 ```
 
 ### Importing Data
 
-```typescript
-// Import from exported data
-await fs.import(exported)
+```ts
+// Load from file
+const json = await file.text()
+const data = JSON.parse(json, (key, value) => {
+	// Handle ArrayBuffer deserialization
+	if (value && value.__type === 'ArrayBuffer') {
+		return new Uint8Array(value.data).buffer
+	}
+	return value
+})
 
-// Merge behaviors
-await fs.import(exported, { mergeBehavior: 'replace' })  // Overwrite existing (default)
-await fs.import(exported, { mergeBehavior: 'skip' })     // Keep existing files
+// Import with options
+await fs.import(data, {
+	overwrite: true,           // Overwrite existing files
+	mergeBehavior: 'replace',  // 'replace' | 'skip' | 'error'
+})
 ```
 
 ### Migration Between Adapters
 
-```typescript
-import { createFileSystem, OPFSAdapter, InMemoryAdapter } from '@mikesaintsg/filesystem'
+```ts
+// Scenario:  Migrate from InMemoryAdapter to OPFS
 
-// Export from OPFS
-const opfsFS = await createFileSystem({ adapter: new OPFSAdapter() })
-const backup = await opfsFS.export()
-opfsFS.close()
+// 1. Export from in-memory
+const memoryFs = await createFileSystem({
+	adapter: createInMemoryAdapter(),
+})
+// ...  populate with data during development
+const data = await memoryFs.export()
 
-// Import to InMemory for testing
-const memFS = await createFileSystem({ adapter: new InMemoryAdapter() })
-await memFS.import(backup)
+// 2. Import to OPFS
+const opfsFs = await createFileSystem({
+	adapter: createOPFSAdapter(),
+})
+await opfsFs.import(data)
 
-// Now memFS has all the same data
-const root = await memFS.getRoot()
-const files = await root.listFiles()
+// Now data persists across page reloads
 ```
 
 ### Exported Data Format
 
-```typescript
+```ts
 interface ExportedFileSystem {
-	readonly version: number              // Export format version
-	readonly exportedAt: number           // Timestamp (Date.now())
-	readonly entries: readonly ExportedEntry[]  // All entries
+	readonly version: number
+	readonly exportedAt: number
+	readonly entries:  readonly ExportedEntry[]
 }
 
-interface ExportedEntry {
-	readonly path: string                 // Full path
-	readonly name: string                 // Entry name
-	readonly kind: 'file' | 'directory'
-	readonly content?: ArrayBuffer        // File content (files only)
-	readonly lastModified?: number        // Timestamp (files only)
+type ExportedEntry = ExportedFileEntry | ExportedDirectoryEntry
+
+interface ExportedFileEntry {
+	readonly path: string
+	readonly name:  string
+	readonly kind: 'file'
+	readonly content: ArrayBuffer
+	readonly lastModified: number
+}
+
+interface ExportedDirectoryEntry {
+	readonly path: string
+	readonly name: string
+	readonly kind: 'directory'
 }
 ```
 
@@ -653,30 +742,24 @@ interface ExportedEntry {
 
 ## Writable Streams
 
-For large files or streaming writes, use the writable stream interface:
+For large files or streaming writes, use writable streams instead of the atomic `write()` method.
 
 ### Opening a Writable
 
-```typescript
+```ts
+const file = await root.createFile('large-file.bin')
 const writable = await file.openWritable()
 
 try {
-	// Write in chunks
-	await writable.write('First chunk')
-	await writable.write('Second chunk')
-	await writable.write(new Uint8Array([0x0A]))
-
-	// Seek to position
-	await writable.seek(0)
-	await writable.write('Overwrite beginning')
-
-	// Resize file
-	await writable.truncate(1000)
+	// Write multiple chunks
+	await writable.write(chunk1)
+	await writable.write(chunk2)
+	await writable.write(chunk3)
 
 	// Commit changes
 	await writable.close()
 } catch (error) {
-	// Abort on error (discards changes)
+	// Discard changes on error
 	await writable.abort()
 	throw error
 }
@@ -684,95 +767,113 @@ try {
 
 ### Writable Stream Methods
 
-| Method           | Description                              |
-|------------------|------------------------------------------|
-| `write(data)`    | Write data at current position           |
-| `seek(position)` | Move cursor to byte position             |
-| `truncate(size)` | Resize file to specified bytes           |
-| `close()`        | Commit changes and close stream          |
-| `abort()`        | Discard changes and close stream         |
+```ts
+// Write at current position
+await writable.write('string data')
+await writable.write(arrayBuffer)
+await writable.write(blob)
+await writable.write(readableStream)
+
+// Seek to specific position
+await writable.seek(1000) // Move to byte 1000
+
+// Truncate file
+await writable.truncate(5000) // Resize to 5000 bytes
+
+// Commit and close
+await writable.close()
+
+// Abort and discard all changes
+await writable.abort()
+```
 
 ### Write Data Types
 
-The `write()` method accepts multiple data types:
-
-```typescript
-await writable.write('String content')
-await writable.write(new ArrayBuffer(1024))
-await writable.write(new Uint8Array([1, 2, 3]))
-await writable.write(new Blob(['blob content']))
-await writable.write(readableStream)
+```ts
+type WriteData =
+	| string                      // UTF-8 encoded
+	| BufferSource                // ArrayBuffer or TypedArray
+	| Blob                        // Blob object
+	| ReadableStream<Uint8Array>  // Stream of bytes
 ```
 
 ---
 
 ## Sync Access (Workers)
 
-For high-performance file operations in Web Workers, use synchronous access handles:
+For high-performance file I/O in Web Workers, use synchronous access handles.  This API is **only available in Web Workers**, not the main thread.
 
 ### Creating a Sync Access Handle
 
-```typescript
-// In a Web Worker only
-const root = await navigator.storage.getDirectory()
-const fileHandle = await root.getFileHandle('database.sqlite', { create: true })
-const syncHandle = await fileHandle.createSyncAccessHandle()
+```ts
+// In a Web Worker
+const file = await root.resolveFile('data.bin')
+const handle = await file. createSyncAccessHandle()
 
 try {
-	// Read entire file
-	const size = syncHandle.getSize()
-	const buffer = new ArrayBuffer(size)
-	const view = new DataView(buffer)
-	syncHandle.read(view, { at: 0 })
+	// Get file size
+	const size = handle.getSize()
 
-	// Write data
-	const encoder = new TextEncoder()
-	const data = encoder.encode('Hello, sync!')
-	syncHandle.write(data, { at: 0 })
+	// Synchronous read
+	const buffer = new Uint8Array(1024)
+	const bytesRead = handle.read(buffer, { at: 0 })
+
+	// Synchronous write
+	const data = new Uint8Array([1, 2, 3, 4])
+	const bytesWritten = handle.write(data, { at: 0 })
 
 	// Resize file
-	syncHandle.truncate(1024)
+	handle.truncate(1000)
 
-	// Ensure changes are persisted
-	syncHandle.flush()
+	// Flush changes to disk
+	handle.flush()
 } finally {
-	// Always close to release lock
-	syncHandle.close()
+	// Always close to release the lock
+	handle.close()
 }
 ```
 
 ### Sync Access Handle Interface
 
-```typescript
+```ts
 interface SyncAccessHandleInterface {
-	/** Native sync access handle */
 	readonly native: FileSystemSyncAccessHandle
 
-	// Accessors
+	/** Gets file size in bytes */
 	getSize(): number
 
-	// Reading
-	read(buffer: ArrayBufferView, options?: { at?: number }): number
+	/**
+	 * Reads bytes into buffer. 
+	 * @returns Number of bytes read
+	 */
+	read(buffer: ArrayBufferView, options?: { readonly at?:  number }): number
 
-	// Writing
-	write(buffer: ArrayBufferView, options?: { at?: number }): number
+	/**
+	 * Writes buffer to file.
+	 * @returns Number of bytes written
+	 */
+	write(buffer: ArrayBufferView, options?: { readonly at?: number }): number
+
+	/** Resizes file to new size */
 	truncate(newSize: number): void
+
+	/** Persists changes to disk */
 	flush(): void
 
-	// Lifecycle
+	/** Releases lock on file */
 	close(): void
 }
 ```
 
 ### When to Use Sync Access
 
-| Use Case                     | Recommended Access   |
-|------------------------------|----------------------|
-| General file I/O             | Async (FileInterface)|
-| SQLite/database files        | Sync in Worker       |
-| Large binary file processing | Sync in Worker       |
-| UI-triggered file saves      | Async (FileInterface)|
-| Background data processing   | Sync in Worker       |
+| Scenario | Recommendation |
+|----------|----------------|
+| Main thread file I/O | Use async methods (`write`, `getText`, etc.) |
+| Worker with frequent small reads/writes | ✅ Use sync access |
+| Worker processing large files | ✅ Use sync access |
+| SQLite-style database files | ✅ Use sync access |
+| Simple one-off file operations | Use async methods |
 
 ---
 
@@ -780,133 +881,159 @@ interface SyncAccessHandleInterface {
 
 ### Iterating Entries
 
-```typescript
-// Iterate all entries (files and directories)
-for await (const entry of directory.entries()) {
-	console.log(`${entry.kind}: ${entry.name}`)
-	if (entry.kind === 'file') {
-		const file = await directory.resolveFile(entry.name)
-		console.log(`  Size: ${(await file.getMetadata()).size}`)
-	}
+```ts
+// All entries (files and directories)
+for await (const entry of dir.entries()) {
+	console.log(entry.name, entry.kind)
+	// entry.handle is the native FileSystemHandle
 }
 
-// Iterate files only
-for await (const file of directory.files()) {
-	console.log(file.getName())
+// Files only
+for await (const file of dir.files()) {
+	const content = await file.getText()
+	console.log(file.getName(), content.length)
 }
 
-// Iterate directories only
-for await (const subdir of directory.directories()) {
-	console.log(subdir.getName())
+// Directories only
+for await (const subdir of dir.directories()) {
+	console.log('Subdirectory:', subdir. getName())
 }
 ```
 
 ### Listing Contents
 
-```typescript
-// Get all entries as array
-const entries = await directory.list()
+```ts
+// All entries as array
+const entries = await dir. list()
+// readonly DirectoryEntry[]
 
-// Get all files as array
-const files = await directory.listFiles()
+// Files as array
+const files = await dir. listFiles()
+// readonly FileInterface[]
 
-// Get all directories as array
-const subdirs = await directory.listDirectories()
+// Directories as array
+const subdirs = await dir.listDirectories()
+// readonly DirectoryInterface[]
 ```
 
 ### Recursive Walking
 
-```typescript
-// Walk all entries recursively
-for await (const { path, entry, depth } of directory.walk()) {
-	const fullPath = [...path, entry.name].join('/')
-	console.log(`${'  '.repeat(depth)}${entry.kind}: ${fullPath}`)
-}
-
-// Walk with options
-for await (const { path, entry } of directory.walk({
-	maxDepth: 3,
-	includeFiles: true,
-	includeDirectories: false,
-	filter: (entry, depth) => !entry.name.startsWith('.')
-})) {
-	console.log(entry.name)
+```ts
+// Walk entire directory tree
+for await (const entry of dir.walk()) {
+	console.log(
+		entry.path. join('/'),  // Full path as array
+		entry.entry.kind,      // 'file' or 'directory'
+		entry. depth            // Nesting level (0 = direct child)
+	)
 }
 ```
 
 ### Walk Options
 
-| Option                | Type                                  | Default | Description                    |
-|-----------------------|---------------------------------------|---------|--------------------------------|
-| `maxDepth`            | `number`                              | ∞       | Maximum recursion depth        |
-| `includeFiles`        | `boolean`                             | `true`  | Include files in results       |
-| `includeDirectories`  | `boolean`                             | `true`  | Include directories in results |
-| `filter`              | `(entry, depth) => boolean`           | —       | Filter function                |
+```ts
+interface WalkOptions {
+	readonly maxDepth?: number
+	readonly includeFiles?: boolean
+	readonly includeDirectories?: boolean
+	readonly filter?: (entry: DirectoryEntry, depth: number) => boolean
+}
+
+// Limit recursion depth
+for await (const entry of dir.walk({ maxDepth: 2 })) {
+	// Only goes 2 levels deep
+}
+
+// Files only, skip hidden files
+for await (const entry of dir.walk({
+	includeFiles: true,
+	includeDirectories:  false,
+	filter: (entry) => !entry.name.startsWith('.'),
+})) {
+	console.log(entry.path.join('/'))
+}
+
+// Find all TypeScript files
+for await (const entry of dir.walk({
+	includeDirectories: false,
+	filter: (entry) => entry.name.endsWith('.ts'),
+})) {
+	console.log('Found:', entry.path.join('/'))
+}
+```
 
 ---
 
 ## Picker Dialogs
 
-File System Access API pickers are available in Chromium browsers only.
+**Chromium only. ** Always check `fs.isUserAccessSupported()` before using these methods.
 
 ### Open File Picker
 
-```typescript
+```ts
 if (fs.isUserAccessSupported()) {
-	// Open single file
+	// Single file
 	const [file] = await fs.showOpenFilePicker()
-	console.log(await file.getText())
+	const content = await file. getText()
 
-	// Open multiple files
+	// Multiple files
 	const files = await fs.showOpenFilePicker({ multiple: true })
 	for (const file of files) {
 		console.log(file.getName())
 	}
 
-	// Filter by file type
+	// With file type filter
 	const images = await fs.showOpenFilePicker({
 		types: [
 			{
 				description: 'Images',
 				accept: {
-					'image/*': ['.png', '.jpg', '.gif', '.webp']
-				}
-			}
-		]
+					'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp'],
+				},
+			},
+		],
 	})
 }
 ```
 
 ### Save File Picker
 
-```typescript
+```ts
 if (fs.isUserAccessSupported()) {
 	const file = await fs.showSaveFilePicker({
 		suggestedName: 'document.txt',
 		types: [
 			{
-				description: 'Text Files',
-				accept: { 'text/plain': ['.txt'] }
-			}
-		]
+				description: 'Text files',
+				accept: { 'text/plain': ['. txt'] },
+			},
+			{
+				description: 'Markdown',
+				accept: { 'text/markdown': ['.md'] },
+			},
+		],
 	})
 
-	await file.write('Content to save')
+	await file.write('Document content')
 }
 ```
 
 ### Directory Picker
 
-```typescript
+```ts
 if (fs.isUserAccessSupported()) {
-	// Read-only access
-	const dir = await fs.showDirectoryPicker()
+	const dir = await fs.showDirectoryPicker({
+		mode: 'readwrite', // Request write access
+	})
 
-	// Read-write access
-	const dir = await fs.showDirectoryPicker({ mode: 'readwrite' })
+	// List contents
+	for await (const entry of dir.entries()) {
+		console.log(entry.name, entry.kind)
+	}
 
-	// Start in specific location
-	const dir = await fs.showDirectoryPicker({ startIn: 'documents' })
+	// Create files in user-selected directory
+	const newFile = await dir.createFile('new-file. txt')
+	await newFile.write('Created by app')
 }
 ```
 
@@ -914,35 +1041,60 @@ if (fs.isUserAccessSupported()) {
 
 #### OpenFilePickerOptions
 
-| Option                   | Type                          | Description                        |
-|--------------------------|-------------------------------|------------------------------------|
-| `multiple`               | `boolean`                     | Allow multiple file selection      |
-| `excludeAcceptAllOption` | `boolean`                     | Hide "All Files" filter option     |
-| `types`                  | `FilePickerAcceptType[]`      | File type filters                  |
-| `id`                     | `string`                      | Remember picker location by ID     |
-| `startIn`                | `StartInDirectory`            | Initial directory                  |
+```ts
+interface OpenFilePickerOptions {
+	readonly multiple?: boolean                    // Allow multiple selection
+	readonly excludeAcceptAllOption?: boolean      // Hide "All files" option
+	readonly types?: readonly FilePickerAcceptType[]  // File type filters
+	readonly id?: string                           // Remember last directory
+	readonly startIn?: StartInDirectory            // Initial directory
+}
+```
 
 #### SaveFilePickerOptions
 
-| Option                   | Type                          | Description                        |
-|--------------------------|-------------------------------|------------------------------------|
-| `suggestedName`          | `string`                      | Default file name                  |
-| `excludeAcceptAllOption` | `boolean`                     | Hide "All Files" filter option     |
-| `types`                  | `FilePickerAcceptType[]`      | File type filters                  |
-| `id`                     | `string`                      | Remember picker location by ID     |
-| `startIn`                | `StartInDirectory`            | Initial directory                  |
+```ts
+interface SaveFilePickerOptions {
+	readonly suggestedName?: string                // Default filename
+	readonly excludeAcceptAllOption?: boolean      // Hide "All files" option
+	readonly types?: readonly FilePickerAcceptType[]  // File type filters
+	readonly id?: string                           // Remember last directory
+	readonly startIn?: StartInDirectory            // Initial directory
+}
+```
 
 #### DirectoryPickerOptions
 
-| Option    | Type                       | Description                           |
-|-----------|----------------------------|---------------------------------------|
-| `id`      | `string`                   | Remember picker location by ID        |
-| `startIn` | `StartInDirectory`         | Initial directory                     |
-| `mode`    | `'read' \| 'readwrite'`    | Permission mode                       |
+```ts
+interface DirectoryPickerOptions {
+	readonly id?: string                  // Remember last directory
+	readonly startIn?: StartInDirectory   // Initial directory
+	readonly mode?: 'read' | 'readwrite'  // Access mode
+}
+```
+
+#### FilePickerAcceptType
+
+```ts
+interface FilePickerAcceptType {
+	readonly description?:  string
+	readonly accept:  Readonly<Record<string, readonly string[]>>
+}
+
+// Example
+const imageTypes:  FilePickerAcceptType = {
+	description: 'Image files',
+	accept: {
+		'image/png': ['. png'],
+		'image/jpeg': ['.jpg', '.jpeg'],
+		'image/gif': ['.gif'],
+	},
+}
+```
 
 #### StartInDirectory
 
-```typescript
+```ts
 type StartInDirectory =
 	| 'desktop'
 	| 'documents'
@@ -950,7 +1102,7 @@ type StartInDirectory =
 	| 'music'
 	| 'pictures'
 	| 'videos'
-	| FileSystemHandle
+	| FileSystemHandle  // Start in directory containing this handle
 ```
 
 ---
@@ -959,53 +1111,72 @@ type StartInDirectory =
 
 ### From DataTransferItem
 
-```typescript
+```ts
+const dropZone = document.getElementById('drop-zone')
+
+dropZone.addEventListener('dragover', (event) => {
+	event.preventDefault()
+})
+
 dropZone.addEventListener('drop', async (event) => {
 	event.preventDefault()
 
-	const items = event.dataTransfer?.items
-	if (!items) return
+	for (const item of event.dataTransfer.items) {
+		const entry = await fs.fromDataTransferItem(item)
 
-	const entries = await fs.fromDataTransferItems(items)
+		if (! entry) continue
 
-	for (const entry of entries) {
-		if (entry.kind === 'file') {
+		// Check if it's a file or directory
+		if ('getText' in entry) {
+			// It's a FileInterface
 			const file = entry as FileInterface
-			console.log(`File: ${file.getName()}`)
+			console.log('File:', file.getName())
+			const content = await file.getText()
 		} else {
+			// It's a DirectoryInterface
 			const dir = entry as DirectoryInterface
-			console.log(`Directory: ${dir.getName()}`)
+			console.log('Directory:', dir. getName())
 			for await (const child of dir.entries()) {
-				console.log(`  ${child.name}`)
+				console.log('  -', child.name)
 			}
 		}
 	}
 })
 
-// Single item
-const entry = await fs.fromDataTransferItem(items[0])
+// Or batch process all items
+dropZone.addEventListener('drop', async (event) => {
+	event.preventDefault()
+	const entries = await fs.fromDataTransferItems(event.dataTransfer.items)
+
+	for (const entry of entries) {
+		console.log(entry.getName())
+	}
+})
 ```
 
 ### From File Input
 
-```typescript
-const input = document.querySelector<HTMLInputElement>('input[type="file"]')
+```ts
+const input = document.querySelector('input[type="file"]') as HTMLInputElement
 
 input.addEventListener('change', async () => {
-	const files = input.files
-	if (!files) return
+	if (! input.files) return
 
-	// Convert FileList to FileInterface array
-	const fileInterfaces = await fs.fromFiles(files)
-
-	for (const file of fileInterfaces) {
-		console.log(file.getName())
-		console.log(await file.getText())
+	// Multiple files
+	const files = await fs.fromFiles(input.files)
+	for (const file of files) {
+		const content = await file.getText()
+		console.log(file.getName(), content.length)
 	}
 })
 
 // Single file
-const file = await fs.fromFile(input.files[0])
+input.addEventListener('change', async () => {
+	if (!input.files? .[0]) return
+
+	const file = await fs.fromFile(input.files[0])
+	const content = await file.getText()
+})
 ```
 
 ---
@@ -1014,147 +1185,120 @@ const file = await fs.fromFile(input.files[0])
 
 ### Error Classes
 
-The library provides typed error classes for different failure modes:
+```ts
+import { FileSystemError, isFileSystemError } from '@mikesaintsg/filesystem'
 
-```typescript
-import {
-	FileSystemError,
-	NotFoundError,
-	NotAllowedError,
-	TypeMismatchError,
-	QuotaExceededError,
-	AbortError,
-	SecurityError
-} from '@mikesaintsg/filesystem'
+try {
+	await dir.resolveFile('nonexistent. txt')
+} catch (error) {
+	if (isFileSystemError(error)) {
+		console.log('Code:', error.code)
+		console.log('Path:', error.path)
+		console.log('Cause:', error.cause)
+	}
+}
 ```
 
 ### Error Hierarchy
 
-| Error Class           | Code                      | When Thrown                           |
-|-----------------------|---------------------------|---------------------------------------|
-| `FileSystemError`     | Various                   | Base class for all errors             |
-| `NotFoundError`       | `'NOT_FOUND'`             | Entry does not exist                  |
-| `NotAllowedError`     | `'NOT_ALLOWED'`           | Permission denied                     |
-| `TypeMismatchError`   | `'TYPE_MISMATCH'`         | Expected file but got directory       |
-| `QuotaExceededError`  | `'QUOTA_EXCEEDED'`        | Storage limit reached                 |
-| `AbortError`          | `'ABORT'`                 | User cancelled picker dialog          |
-| `SecurityError`       | `'SECURITY'`              | Security restriction violated         |
+```ts
+class FileSystemError extends Error {
+	readonly code: FileSystemErrorCode
+	readonly path?:  string
+	readonly cause?: Error
+}
+```
 
 ### Error Codes
 
-```typescript
-type FileSystemErrorCode =
-	| 'NOT_FOUND'
-	| 'NOT_ALLOWED'
-	| 'TYPE_MISMATCH'
-	| 'NO_MODIFICATION_ALLOWED'
-	| 'INVALID_STATE'
-	| 'QUOTA_EXCEEDED'
-	| 'ABORT'
-	| 'SECURITY'
-	| 'ENCODING'
-	| 'NOT_SUPPORTED'
-```
+| Code | Cause |
+|------|-------|
+| `NOT_FOUND` | File or directory doesn't exist |
+| `NOT_ALLOWED` | Permission denied |
+| `TYPE_MISMATCH` | Expected file, got directory (or vice versa) |
+| `NO_MODIFICATION_ALLOWED` | Read-only file system or entry |
+| `INVALID_STATE` | Handle is no longer valid |
+| `QUOTA_EXCEEDED` | Storage quota exceeded |
+| `ABORT` | Operation was aborted by user |
+| `SECURITY` | Security restriction (e.g., cross-origin) |
+| `ENCODING` | Invalid encoding |
+| `NOT_SUPPORTED` | Feature not supported in this browser |
 
 ### Handling Errors
 
-```typescript
-// NotFoundError - entry does not exist
-try {
-	const file = await directory.resolveFile('missing.txt')
-} catch (error) {
-	if (error instanceof NotFoundError) {
-		console.log(`File not found: ${error.path}`)
-	}
-}
+```ts
+import { isFileSystemError } from '@mikesaintsg/filesystem'
 
-// NotAllowedError - permission denied
 try {
-	await file.write('content')
+	await dir.resolveFile('config.json')
 } catch (error) {
-	if (error instanceof NotAllowedError) {
-		const granted = await file.requestWritePermission()
-		if (granted) {
-			await file.write('content')
+	if (isFileSystemError(error)) {
+		switch (error.code) {
+			case 'NOT_FOUND':
+				console.log('File not found, creating default')
+				const file = await dir.createFile('config.json')
+				await file.write('{}')
+				break
+			case 'NOT_ALLOWED':
+				console.log('Permission denied')
+				const granted = await dir.requestWritePermission()
+				if (granted) {
+					// Retry operation
+				}
+				break
+			case 'QUOTA_EXCEEDED':
+				console. log('Storage full')
+				// Clean up old files
+				break
+			default:
+				throw error
 		}
-	}
-}
-
-// QuotaExceededError - storage full
-try {
-	await file.write(largeContent)
-} catch (error) {
-	if (error instanceof QuotaExceededError) {
-		showStorageFullMessage()
-	}
-}
-
-// AbortError - user cancelled picker
-try {
-	const files = await fs.showOpenFilePicker()
-} catch (error) {
-	if (error instanceof AbortError) {
-		// User cancelled, not an error
-		return
-	}
-	throw error
-}
-
-// Generic error handling
-try {
-	await someOperation()
-} catch (error) {
-	if (error instanceof FileSystemError) {
-		console.log(`Error [${error.code}]: ${error.message}`)
-		if (error.path) {
-			console.log(`Path: ${error.path}`)
-		}
+	} else {
+		throw error
 	}
 }
 ```
 
 ### Type Guards
 
-```typescript
+```ts
 import {
+	isFileSystemError,
 	isNotFoundError,
 	isNotAllowedError,
-	isFileSystemError
+	isQuotaExceededError,
 } from '@mikesaintsg/filesystem'
 
-try {
-	await directory.resolveFile('file.txt')
-} catch (error) {
-	if (isNotFoundError(error)) {
-		// error is typed as NotFoundError
-	} else if (isFileSystemError(error)) {
-		// error is typed as FileSystemError
-	}
-}
+if (isFileSystemError(error)) { /* any file system error */ }
+if (isNotFoundError(error)) { /* NOT_FOUND error */ }
+if (isNotAllowedError(error)) { /* NOT_ALLOWED error */ }
+if (isQuotaExceededError(error)) { /* QUOTA_EXCEEDED error */ }
 ```
 
 ---
 
 ## Native Access
 
-Every wrapper exposes its underlying native browser handle via the `.native` property:
+Every wrapper exposes its underlying native object via the `native` property.
 
 ### File
 
-```typescript
-const nativeHandle: FileSystemFileHandle = file.native
+```ts
+const file = await root.resolveFile('document.txt')
+const nativeHandle:  FileSystemFileHandle = file.native
 
-// Use native APIs
+// Use native API directly
 const nativeFile = await nativeHandle.getFile()
-console.log(nativeFile.name, nativeFile.size)
+console.log(nativeFile.size)
 ```
 
 ### Directory
 
-```typescript
-const nativeHandle: FileSystemDirectoryHandle = directory.native
+```ts
+const dir = await root. resolveDirectory('documents')
+const nativeHandle: FileSystemDirectoryHandle = dir.native
 
-// Use native APIs
+// Use native API directly
 for await (const [name, handle] of nativeHandle.entries()) {
 	console.log(name, handle.kind)
 }
@@ -1162,35 +1306,34 @@ for await (const [name, handle] of nativeHandle.entries()) {
 
 ### Writable Stream
 
-```typescript
-const nativeStream: FileSystemWritableFileStream = writable.native
+```ts
+const writable = await file.openWritable()
+const nativeStream:  FileSystemWritableFileStream = writable.native
 
-// Use native APIs
-await nativeStream.write({ type: 'seek', position: 0 })
+// Use native API directly
+await nativeStream.write({ type: 'write', position: 0, data: 'Hello' })
 ```
 
 ### Creating from Native Handles
 
-```typescript
+```ts
 import { fromFileHandle, fromDirectoryHandle } from '@mikesaintsg/filesystem'
 
-// From native file handle
-const nativeFileHandle = await showOpenFilePicker().then(h => h[0])
-const file = fromFileHandle(nativeFileHandle)
+// Wrap existing native handles
+const fileInterface = fromFileHandle(nativeFileHandle)
+const dirInterface = fromDirectoryHandle(nativeDirHandle)
 
-// From native directory handle
-const nativeDirHandle = await navigator.storage.getDirectory()
-const directory = fromDirectoryHandle(nativeDirHandle)
+// Now use the wrapped interface
+const content = await fileInterface.getText()
 ```
 
 ### When to Use Native Access
 
-Use native access when you need:
-
-- Features not exposed by the wrapper
-- Maximum performance for specific operations
-- Compatibility with other file system libraries
-- Debugging with browser DevTools
+- Complex operations not supported by the wrapper
+- Integration with other libraries expecting native handles
+- Performance-critical operations
+- Debugging and inspection
+- Using features not yet wrapped
 
 ---
 
@@ -1198,76 +1341,72 @@ Use native access when you need:
 
 ### Strict Typing
 
-The library is designed with TypeScript strict mode:
+All methods are fully typed:
 
-```typescript
-// No `any` types
-// No `!` non-null assertions
-// No unsafe `as` casts
+```ts
+// Return types are precise
+const file: FileInterface | undefined = await dir.getFile('readme.txt')
+const file: FileInterface = await dir.resolveFile('readme.txt') // throws if not found
 
-// Use type guards for narrowing
-const entry = await directory.resolvePath('data', 'file.txt')
-if (entry && entry.kind === 'file') {
-	// entry is narrowed, but cast explicitly for FileInterface methods
-	const file = entry as FileInterface
-	console.log(await file.getText())
-}
+// Content types match operation
+const text: string = await file.getText()
+const buffer: ArrayBuffer = await file.getArrayBuffer()
+const blob: Blob = await file.getBlob()
+const stream: ReadableStream<Uint8Array> = file.getStream()
 ```
 
 ### Readonly by Default
 
-Return types use `readonly` for immutability:
+All returned collections are readonly:
 
-```typescript
-// Arrays are readonly
-const entries = await directory.list()
-// entries: readonly DirectoryEntry[]
+```ts
+const entries = await dir.list()
+// entries is readonly DirectoryEntry[]
 
-const path = await parent.resolve(child)
-// path: readonly string[] | null
-
-// Attempting to mutate is a compile error
-entries.push(newEntry) // Error: Property 'push' does not exist
+entries.push(newEntry) // ❌ TypeScript error
+entries[0].name = 'new' // ❌ TypeScript error
 ```
 
 ### Interface Pattern
 
-Following the naming conventions from copilot-instructions.md:
+Behavioral interfaces use the `Interface` suffix:
 
-```typescript
-// Behavioral interfaces use Interface suffix
-interface FileInterface { /* ... */ }
-interface DirectoryInterface { /* ... */ }
-interface FileSystemInterface { /* ... */ }
-interface WritableFileInterface { /* ... */ }
-interface SyncAccessHandleInterface { /* ... */ }
+```ts
+import type {
+	FileInterface,
+	DirectoryInterface,
+	FileSystemInterface,
+	WritableFileInterface,
+	SyncAccessHandleInterface,
+	StorageAdapterInterface,
+} from '@mikesaintsg/filesystem'
 
-// Data-only interfaces have no suffix
-interface FileMetadata { /* ... */ }
-interface DirectoryEntry { /* ... */ }
-interface StorageQuota { /* ... */ }
-interface WalkEntry { /* ... */ }
-interface WalkOptions { /* ... */ }
+// Data types don't have the suffix
+import type {
+	FileMetadata,
+	DirectoryEntry,
+	StorageQuota,
+	WalkEntry,
+	ExportedFileSystem,
+} from '@mikesaintsg/filesystem'
 ```
 
 ### Entry Kind Discrimination
 
-```typescript
-interface DirectoryEntry {
-	readonly name: string
-	readonly kind: EntryKind
-	readonly handle: FileSystemHandle
-}
+```ts
+const entry = await root.resolvePath('something')
 
-// Use kind to discriminate
-for await (const entry of directory.entries()) {
-	switch (entry.kind) {
-		case 'file':
-			// Handle file
-			break
-		case 'directory':
-			// Handle directory
-			break
+if (entry) {
+	// Need to determine if file or directory
+	// Option 1: Check for file-specific method
+	if ('getText' in entry) {
+		const file = entry as FileInterface
+		const content = await file.getText()
+	} else {
+		const dir = entry as DirectoryInterface
+		for await (const child of dir.entries()) {
+			console.log(child.name)
+		}
 	}
 }
 ```
@@ -1278,24 +1417,28 @@ for await (const entry of directory.entries()) {
 
 ### 1. Use Async Generators for Large Directories
 
-```typescript
-// ✅ Memory efficient: process one at a time
-for await (const entry of directory.entries()) {
-	processEntry(entry)
-	if (shouldStop) break
+```ts
+// ❌ Memory-heavy for large directories
+const allEntries = await dir.list()
+const allFiles = await dir.listFiles()
+
+// ✅ Memory-efficient streaming
+for await (const entry of dir.entries()) {
+	process(entry)
 }
 
-// ❌ Memory heavy: loads all entries
-const entries = await directory.list()
-for (const entry of entries) {
-	processEntry(entry)
+for await (const file of dir.files()) {
+	process(file)
 }
 ```
 
 ### 2. Use Streams for Large Files
 
-```typescript
-// ✅ Memory efficient: stream processing
+```ts
+// ❌ Loads entire file into memory
+const content = await file.getArrayBuffer()
+
+// ✅ Stream processing
 const stream = file.getStream()
 const reader = stream.getReader()
 while (true) {
@@ -1304,90 +1447,105 @@ while (true) {
 	processChunk(value)
 }
 
-// ❌ Memory heavy: load entire file
-const buffer = await file.getArrayBuffer()
-processBuffer(buffer)
+// ✅ Streaming write
+const writable = await file.openWritable()
+for (const chunk of chunks) {
+	await writable.write(chunk)
+}
+await writable.close()
 ```
 
 ### 3. Use Sync Access in Workers for High-Throughput
 
-```typescript
-// ✅ Fast: synchronous operations in Worker
-const syncHandle = await fileHandle.createSyncAccessHandle()
-syncHandle.write(data, { at: offset })
-syncHandle.flush()
-syncHandle.close()
+```ts
+// In a Web Worker for database-like access patterns
+const handle = await file.createSyncAccessHandle()
 
-// ❌ Slower: async operations with overhead
-const writable = await file.openWritable()
-await writable.seek(offset)
-await writable.write(data)
-await writable.close()
+// Synchronous I/O is much faster for frequent small operations
+for (let i = 0; i < 10000; i++) {
+	handle.read(buffer, { at: i * 64 })
+	// Process buffer
+	handle.write(result, { at: i * 64 })
+}
+
+handle.flush()
+handle.close()
 ```
 
 ### 4. Batch Path Creation
 
-```typescript
-// ✅ Efficient: single createPath call
-const deep = await root.createPath('a', 'b', 'c', 'd', 'e')
+```ts
+// ❌ Multiple round trips
+await root.createDirectory('src')
+const src = await root.resolveDirectory('src')
+await src.createDirectory('components')
+const components = await src.resolveDirectory('components')
+await components.createDirectory('ui')
 
-// ❌ Inefficient: multiple separate calls
-let dir = await root.createDirectory('a')
-dir = await dir.createDirectory('b')
-dir = await dir.createDirectory('c')
-dir = await dir.createDirectory('d')
-dir = await dir.createDirectory('e')
+// ✅ Single operation
+const ui = await root.createPath('src', 'components', 'ui')
 ```
 
 ### 5. Use Existence Checks Before Operations
 
-```typescript
-// ✅ Check first, then act
-if (await directory.hasFile('config.json')) {
-	const file = await directory.resolveFile('config.json')
-	// Process file
-} else {
-	// Handle missing file
+```ts
+// ❌ Try/catch is slower for expected failures
+try {
+	await dir. resolveFile('maybe-exists.txt')
+} catch {
+	// Handle not found
 }
 
-// ❌ Try/catch for control flow
-try {
-	const file = await directory.resolveFile('config.json')
-	// Process file
-} catch {
-	// Handle missing file
+// ✅ Check first when you expect it might not exist
+if (await dir.hasFile('maybe-exists.txt')) {
+	const file = await dir.resolveFile('maybe-exists.txt')
+}
+
+// Or use get() which returns undefined
+const file = await dir.getFile('maybe-exists.txt')
+if (file) {
+	// Use file
 }
 ```
 
 ### 6. Limit Recursive Walks
 
-```typescript
-// ✅ Limited depth
-for await (const entry of directory.walk({ maxDepth: 3 })) {
-	processEntry(entry)
+```ts
+// ❌ Could be very slow for deep trees
+for await (const entry of dir.walk()) {
+	// Walks entire tree
 }
 
-// ❌ Unlimited recursion on large trees
-for await (const entry of directory.walk()) {
-	processEntry(entry)
+// ✅ Limit depth
+for await (const entry of dir.walk({ maxDepth: 3 })) {
+	// Only goes 3 levels deep
+}
+
+// ✅ Filter early
+for await (const entry of dir.walk({
+	filter: (entry) => !entry.name.startsWith('.'),
+	includeDirectories: false, // Skip directories if not needed
+})) {
+	// Only matching entries
 }
 ```
 
 ### 7. Use Filter in Walk
 
-```typescript
-// ✅ Filter at source
-for await (const entry of directory.walk({
-	filter: (e) => !e.name.startsWith('.') && e.name !== 'node_modules'
-})) {
-	processEntry(entry)
+```ts
+// ❌ Filter after iteration
+const allEntries:  WalkEntry[] = []
+for await (const entry of dir.walk()) {
+	if (entry.entry.name. endsWith('.ts')) {
+		allEntries.push(entry)
+	}
 }
 
-// ❌ Filter after iteration
-for await (const entry of directory.walk()) {
-	if (!entry.name.startsWith('.') && entry.name !== 'node_modules') {
-		processEntry(entry)
-	}
+// ✅ Filter during iteration
+for await (const entry of dir.walk({
+	filter: (entry) => entry.name.endsWith('.ts'),
+})) {
+	// Only .ts files
 }
 ```
 
@@ -1397,74 +1555,85 @@ for await (const entry of directory.walk()) {
 
 ### Feature Detection
 
-```typescript
-import { createFileSystem } from '@mikesaintsg/filesystem'
+```ts
+// Check OPFS support
+if (fs.isOPFSSupported()) {
+	// Full OPFS functionality
+}
 
-const fs = await createFileSystem()
+// Check picker support (Chromium only)
+if (fs.isUserAccessSupported()) {
+	// showOpenFilePicker, showSaveFilePicker, showDirectoryPicker
+}
 
-// OPFS support (all modern browsers)
-const hasOPFS = typeof navigator?.storage?.getDirectory === 'function'
-
-// File System Access API (Chromium only)
-const hasUserAccess = fs.isUserAccessSupported()
-
-// Sync access handles (Workers only)
-const hasSyncAccess = typeof FileSystemSyncAccessHandle !== 'undefined'
+// Check sync access support (Workers only)
+if (typeof FileSystemSyncAccessHandle !== 'undefined') {
+	// Sync access available
+}
 ```
 
 ### Browser Support Matrix
 
-| Feature                      | Chrome | Edge   | Safari | Firefox |
-|------------------------------|--------|--------|--------|---------|
-| OPFS (`getDirectory`)        | 86+    | 86+    | 15.2+  | 111+    |
-| `FileSystemSyncAccessHandle` | 102+   | 102+   | 15.2+  | 111+    |
-| `showOpenFilePicker`         | 86+    | 86+    | ❌     | ❌      |
-| `showSaveFilePicker`         | 86+    | 86+    | ❌     | ❌      |
-| `showDirectoryPicker`        | 86+    | 86+    | ❌     | ❌      |
-| `createWritable`             | 86+    | 86+    | ❌     | ❌      |
+| Feature | Chrome | Firefox | Safari | Edge |
+|---------|--------|---------|--------|------|
+| OPFS | 86+ | 111+ | 15.2+ | 86+ |
+| File Pickers | 86+ | ❌ | ❌ | 86+ |
+| Drag & Drop (file handles) | 86+ | ❌ | ❌ | 86+ |
+| Sync Access Handle | 102+ | 111+ | ❌ | 102+ |
+| File API (read-only) | ✅ | ✅ | ✅ | ✅ |
 
 ### Graceful Degradation
 
-| Feature          | Chromium | Safari | Firefox | Fallback              |
-|------------------|----------|--------|---------|------------------------|
-| OPFS             | ✅       | ✅     | ✅      | None needed            |
-| File pickers     | ✅       | ❌     | ❌      | `<input type="file">` |
-| Save picker      | ✅       | ❌     | ❌      | Download blob          |
-| Directory picker | ✅       | ❌     | ❌      | Drag-drop only         |
-| Sync access      | ✅       | ✅     | ✅      | Async only             |
+```ts
+async function saveFile(content: string, filename: string): Promise<void> {
+	const fs = await createFileSystem()
+
+	// Try native file picker first (best UX)
+	if (fs.isUserAccessSupported()) {
+		try {
+			const file = await fs.showSaveFilePicker({
+				suggestedName: filename,
+			})
+			await file.write(content)
+			return
+		} catch (error) {
+			// User cancelled or other error, fall through
+			if (isFileSystemError(error) && error.code === 'ABORT') {
+				return // User cancelled, don't fall back
+			}
+		}
+	}
+
+	// Fallback:  Download via anchor element
+	const blob = new Blob([content], { type: 'text/plain' })
+	const url = URL.createObjectURL(blob)
+	const a = document.createElement('a')
+	a.href = url
+	a.download = filename
+	a.click()
+	URL.revokeObjectURL(url)
+}
+```
 
 ### Fallback Pattern
 
-```typescript
-async function openFile(): Promise<FileInterface | undefined> {
-	const fs = await createFileSystem()
+```ts
+import {
+	createFileSystem,
+	createOPFSAdapter,
+	createInMemoryAdapter,
+} from '@mikesaintsg/filesystem'
 
-	if (fs.isUserAccessSupported()) {
-		// Use native picker
-		try {
-			const [file] = await fs.showOpenFilePicker()
-			return file
-		} catch (error) {
-			if (error instanceof AbortError) {
-				return undefined // User cancelled
-			}
-			throw error
-		}
-	} else {
-		// Fall back to input element
-		return new Promise((resolve) => {
-			const input = document.createElement('input')
-			input.type = 'file'
-			input.onchange = async () => {
-				if (input.files?.[0]) {
-					resolve(await fs.fromFile(input.files[0]))
-				} else {
-					resolve(undefined)
-				}
-			}
-			input.click()
-		})
+async function createBestFileSystem(): Promise<FileSystemInterface> {
+	// Try OPFS first (persistent, best performance)
+	const opfsAdapter = createOPFSAdapter()
+	if (await opfsAdapter.isAvailable()) {
+		return createFileSystem({ adapter: opfsAdapter })
 	}
+
+	// Fallback to in-memory (works everywhere, not persistent)
+	console.warn('OPFS not available, using in-memory storage')
+	return createFileSystem({ adapter: createInMemoryAdapter() })
 }
 ```
 
@@ -1474,239 +1643,202 @@ async function openFile(): Promise<FileInterface | undefined> {
 
 ### Factory Functions
 
-#### createFileSystem(): Promise\<FileSystemInterface\>
+#### createFileSystem(options? ): Promise\<FileSystemInterface\>
 
-Creates a file system interface.
+Creates a file system interface with the specified adapter.
 
-**Returns:** Promise resolving to FileSystemInterface
+```ts
+// Default (OPFS)
+const fs = await createFileSystem()
 
----
+// With explicit adapter
+const fs = await createFileSystem({
+	adapter: createInMemoryAdapter(),
+})
+```
+
+#### createOPFSAdapter(): StorageAdapterInterface
+
+Creates an OPFS storage adapter.
+
+```ts
+const adapter = createOPFSAdapter()
+if (await adapter.isAvailable()) {
+	const fs = await createFileSystem({ adapter })
+}
+```
+
+#### createInMemoryAdapter(): StorageAdapterInterface
+
+Creates an in-memory storage adapter.
+
+```ts
+const adapter = createInMemoryAdapter()
+const fs = await createFileSystem({ adapter })
+```
 
 #### fromFileHandle(handle: FileSystemFileHandle): FileInterface
 
-Creates a file interface from a native handle.
+Wraps a native file handle.
 
-**Parameters:**
-- `handle` - Native FileSystemFileHandle
-
-**Returns:** FileInterface
-
----
+```ts
+const fileInterface = fromFileHandle(nativeHandle)
+```
 
 #### fromDirectoryHandle(handle: FileSystemDirectoryHandle): DirectoryInterface
 
-Creates a directory interface from a native handle.
+Wraps a native directory handle.
 
-**Parameters:**
-- `handle` - Native FileSystemDirectoryHandle
-
-**Returns:** DirectoryInterface
-
----
+```ts
+const dirInterface = fromDirectoryHandle(nativeHandle)
+```
 
 ### FileSystemInterface
 
 #### Methods
 
-| Method                         | Returns                                           | Description                    |
-|--------------------------------|---------------------------------------------------|--------------------------------|
-| `getRoot()`                    | `Promise<DirectoryInterface>`                     | Get OPFS root directory        |
-| `getQuota()`                   | `Promise<StorageQuota>`                           | Get storage quota info         |
-| `isUserAccessSupported()`      | `boolean`                                         | Check picker support           |
-| `showOpenFilePicker(options?)` | `Promise<readonly FileInterface[]>`               | Open file picker dialog        |
-| `showSaveFilePicker(options?)` | `Promise<FileInterface>`                          | Save file picker dialog        |
-| `showDirectoryPicker(options?)`| `Promise<DirectoryInterface>`                     | Directory picker dialog        |
-| `fromDataTransferItem(item)`   | `Promise<FileInterface \| DirectoryInterface \| null>` | From drag-drop item      |
-| `fromDataTransferItems(items)` | `Promise<readonly (FileInterface \| DirectoryInterface)[]>` | From drag-drop items |
-| `fromFile(file)`               | `Promise<FileInterface>`                          | From File API                  |
-| `fromFiles(files)`             | `Promise<readonly FileInterface[]>`               | From FileList                  |
-
----
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getRoot()` | `Promise<DirectoryInterface>` | Get OPFS root directory |
+| `getQuota()` | `Promise<StorageQuota>` | Get storage quota info |
+| `isOPFSSupported()` | `boolean` | Check OPFS availability |
+| `isUserAccessSupported()` | `boolean` | Check picker availability |
+| `showOpenFilePicker(opts?)` | `Promise<readonly FileInterface[]>` | Open file picker |
+| `showSaveFilePicker(opts?)` | `Promise<FileInterface>` | Save file picker |
+| `showDirectoryPicker(opts?)` | `Promise<DirectoryInterface>` | Directory picker |
+| `fromDataTransferItem(item)` | `Promise<FileInterface \| DirectoryInterface \| null>` | From drag-drop |
+| `fromDataTransferItems(items)` | `Promise<readonly (FileInterface \| DirectoryInterface)[]>` | From drag-drop |
+| `fromFile(file)` | `Promise<FileInterface>` | From File object |
+| `fromFiles(files)` | `Promise<readonly FileInterface[]>` | From FileList |
+| `export(opts?)` | `Promise<ExportedFileSystem>` | Export file system |
+| `import(data, opts?)` | `Promise<void>` | Import file system |
+| `close()` | `void` | Close and release resources |
 
 ### FileInterface
 
 #### Properties
 
-| Property | Type                    | Description           |
-|----------|-------------------------|-----------------------|
-| `native` | `FileSystemFileHandle`  | Native file handle    |
+| Property | Type | Description |
+|----------|------|-------------|
+| `native` | `FileSystemFileHandle` | Native handle |
 
 #### Methods
 
-| Method                    | Returns                      | Description                    |
-|---------------------------|------------------------------|--------------------------------|
-| `getName()`               | `string`                     | File name                      |
-| `getMetadata()`           | `Promise<FileMetadata>`      | File metadata                  |
-| `getText()`               | `Promise<string>`            | Read as text                   |
-| `getArrayBuffer()`        | `Promise<ArrayBuffer>`       | Read as binary                 |
-| `getBlob()`               | `Promise<Blob>`              | Read as Blob                   |
-| `getStream()`             | `ReadableStream<Uint8Array>` | Read as stream                 |
-| `write(data, options?)`   | `Promise<void>`              | Write data (atomic)            |
-| `append(data)`            | `Promise<void>`              | Append data                    |
-| `truncate(size)`          | `Promise<void>`              | Resize file                    |
-| `openWritable()`          | `Promise<WritableFileInterface>` | Open writable stream       |
-| `hasReadPermission()`     | `Promise<boolean>`           | Check read permission          |
-| `hasWritePermission()`    | `Promise<boolean>`           | Check write permission         |
-| `requestWritePermission()`| `Promise<boolean>`           | Request write permission       |
-| `isSameEntry(other)`      | `Promise<boolean>`           | Compare with another file      |
-
----
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getName()` | `string` | File name |
+| `getMetadata()` | `Promise<FileMetadata>` | File metadata |
+| `getText()` | `Promise<string>` | Read as text |
+| `getArrayBuffer()` | `Promise<ArrayBuffer>` | Read as buffer |
+| `getBlob()` | `Promise<Blob>` | Read as blob |
+| `getStream()` | `ReadableStream<Uint8Array>` | Get readable stream |
+| `write(data, opts?)` | `Promise<void>` | Write data |
+| `append(data)` | `Promise<void>` | Append data |
+| `truncate(size)` | `Promise<void>` | Truncate file |
+| `openWritable()` | `Promise<WritableFileInterface>` | Open writable stream |
+| `hasReadPermission()` | `Promise<boolean>` | Check read permission |
+| `hasWritePermission()` | `Promise<boolean>` | Check write permission |
+| `requestWritePermission()` | `Promise<boolean>` | Request write permission |
+| `isSameEntry(other)` | `Promise<boolean>` | Compare entries |
 
 ### DirectoryInterface
 
 #### Properties
 
-| Property | Type                         | Description              |
-|----------|------------------------------|--------------------------|
-| `native` | `FileSystemDirectoryHandle`  | Native directory handle  |
+| Property | Type | Description |
+|----------|------|-------------|
+| `native` | `FileSystemDirectoryHandle` | Native handle |
 
 #### Methods
 
-| Method                              | Returns                                            | Description                    |
-|-------------------------------------|----------------------------------------------------|--------------------------------|
-| `getName()`                         | `string`                                           | Directory name                 |
-| `getFile(name)`                     | `Promise<FileInterface \| undefined>`              | Get file by name               |
-| `resolveFile(name)`                 | `Promise<FileInterface>`                           | Get file or throw              |
-| `createFile(name)`                  | `Promise<FileInterface>`                           | Create/overwrite file          |
-| `hasFile(name)`                     | `Promise<boolean>`                                 | Check file exists              |
-| `removeFile(name)`                  | `Promise<void>`                                    | Remove file                    |
-| `getDirectory(name)`                | `Promise<DirectoryInterface \| undefined>`         | Get directory by name          |
-| `resolveDirectory(name)`            | `Promise<DirectoryInterface>`                      | Get directory or throw         |
-| `createDirectory(name)`             | `Promise<DirectoryInterface>`                      | Create directory               |
-| `hasDirectory(name)`                | `Promise<boolean>`                                 | Check directory exists         |
-| `removeDirectory(name, options?)`   | `Promise<void>`                                    | Remove directory               |
-| `resolvePath(...segments)`          | `Promise<FileInterface \| DirectoryInterface \| undefined>` | Resolve path           |
-| `createPath(...segments)`           | `Promise<DirectoryInterface>`                      | Create nested directories      |
-| `entries()`                         | `AsyncIterable<DirectoryEntry>`                    | Iterate all entries            |
-| `files()`                           | `AsyncIterable<FileInterface>`                     | Iterate files                  |
-| `directories()`                     | `AsyncIterable<DirectoryInterface>`                | Iterate directories            |
-| `list()`                            | `Promise<readonly DirectoryEntry[]>`               | List all entries               |
-| `listFiles()`                       | `Promise<readonly FileInterface[]>`                | List files                     |
-| `listDirectories()`                 | `Promise<readonly DirectoryInterface[]>`           | List directories               |
-| `walk(options?)`                    | `AsyncIterable<WalkEntry>`                         | Recursive traversal            |
-| `hasReadPermission()`               | `Promise<boolean>`                                 | Check read permission          |
-| `hasWritePermission()`              | `Promise<boolean>`                                 | Check write permission         |
-| `requestWritePermission()`          | `Promise<boolean>`                                 | Request write permission       |
-| `isSameEntry(other)`                | `Promise<boolean>`                                 | Compare with another directory |
-| `resolve(descendant)`               | `Promise<readonly string[] \| null>`               | Get relative path              |
-
----
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getName()` | `string` | Directory name |
+| `getFile(name)` | `Promise<FileInterface \| undefined>` | Get file |
+| `resolveFile(name)` | `Promise<FileInterface>` | Get file (throws) |
+| `createFile(name)` | `Promise<FileInterface>` | Create file |
+| `hasFile(name)` | `Promise<boolean>` | Check file exists |
+| `removeFile(name)` | `Promise<void>` | Remove file |
+| `copyFile(src, dest, opts?)` | `Promise<FileInterface>` | Copy file |
+| `moveFile(src, dest, opts?)` | `Promise<FileInterface>` | Move file |
+| `getDirectory(name)` | `Promise<DirectoryInterface \| undefined>` | Get directory |
+| `resolveDirectory(name)` | `Promise<DirectoryInterface>` | Get directory (throws) |
+| `createDirectory(name)` | `Promise<DirectoryInterface>` | Create directory |
+| `hasDirectory(name)` | `Promise<boolean>` | Check directory exists |
+| `removeDirectory(name, opts?)` | `Promise<void>` | Remove directory |
+| `resolvePath(... segments)` | `Promise<FileInterface \| DirectoryInterface \| undefined>` | Resolve path |
+| `createPath(...segments)` | `Promise<DirectoryInterface>` | Create nested path |
+| `entries()` | `AsyncIterable<DirectoryEntry>` | Iterate entries |
+| `files()` | `AsyncIterable<FileInterface>` | Iterate files |
+| `directories()` | `AsyncIterable<DirectoryInterface>` | Iterate directories |
+| `list()` | `Promise<readonly DirectoryEntry[]>` | List entries |
+| `listFiles()` | `Promise<readonly FileInterface[]>` | List files |
+| `listDirectories()` | `Promise<readonly DirectoryInterface[]>` | List directories |
+| `walk(opts?)` | `AsyncIterable<WalkEntry>` | Walk recursively |
+| `hasReadPermission()` | `Promise<boolean>` | Check read permission |
+| `hasWritePermission()` | `Promise<boolean>` | Check write permission |
+| `requestWritePermission()` | `Promise<boolean>` | Request write permission |
+| `isSameEntry(other)` | `Promise<boolean>` | Compare entries |
+| `resolve(descendant)` | `Promise<readonly string[] \| null>` | Get relative path |
 
 ### WritableFileInterface
 
 #### Properties
 
-| Property | Type                            | Description              |
-|----------|---------------------------------|--------------------------|
-| `native` | `FileSystemWritableFileStream`  | Native writable stream   |
+| Property | Type | Description |
+|----------|------|-------------|
+| `native` | `FileSystemWritableFileStream` | Native stream |
 
 #### Methods
 
-| Method           | Returns          | Description                    |
-|------------------|------------------|--------------------------------|
-| `write(data)`    | `Promise<void>`  | Write at current position      |
-| `seek(position)` | `Promise<void>`  | Move cursor                    |
-| `truncate(size)` | `Promise<void>`  | Resize file                    |
-| `close()`        | `Promise<void>`  | Commit and close               |
-| `abort()`        | `Promise<void>`  | Discard and close              |
-
----
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `write(data)` | `Promise<void>` | Write data |
+| `seek(position)` | `Promise<void>` | Seek to position |
+| `truncate(size)` | `Promise<void>` | Truncate file |
+| `close()` | `Promise<void>` | Commit and close |
+| `abort()` | `Promise<void>` | Abort and discard |
 
 ### SyncAccessHandleInterface
 
 #### Properties
 
-| Property | Type                          | Description                    |
-|----------|-------------------------------|--------------------------------|
-| `native` | `FileSystemSyncAccessHandle`  | Native sync access handle      |
+| Property | Type | Description |
+|----------|------|-------------|
+| `native` | `FileSystemSyncAccessHandle` | Native handle |
 
 #### Methods
 
-| Method              | Returns   | Description                    |
-|---------------------|-----------|--------------------------------|
-| `getSize()`         | `number`  | File size in bytes             |
-| `read(buffer, opts)`| `number`  | Read bytes, return count       |
-| `write(buffer, opts)`| `number` | Write bytes, return count      |
-| `truncate(newSize)` | `void`    | Resize file                    |
-| `flush()`           | `void`    | Persist changes                |
-| `close()`           | `void`    | Release lock                   |
-
----
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getSize()` | `number` | Get file size |
+| `read(buffer, opts?)` | `number` | Read bytes |
+| `write(buffer, opts?)` | `number` | Write bytes |
+| `truncate(newSize)` | `void` | Resize file |
+| `flush()` | `void` | Flush to disk |
+| `close()` | `void` | Release lock |
 
 ### Types
 
-```typescript
-/** Entry kind discriminator */
+```ts
 type EntryKind = 'file' | 'directory'
+type Unsubscribe = () => void
 
-/** File metadata snapshot */
-interface FileMetadata {
-	readonly name: string
-	readonly size: number
-	readonly type: string
-	readonly lastModified: number
-}
-
-/** Directory entry for iteration */
-interface DirectoryEntry {
-	readonly name: string
-	readonly kind: EntryKind
-	readonly handle: FileSystemHandle
-}
-
-/** Storage quota information */
-interface StorageQuota {
-	readonly usage: number
-	readonly quota: number
-	readonly available: number
-	readonly percentUsed: number
-}
-
-/** Walk entry with path info */
-interface WalkEntry {
-	readonly path: readonly string[]
-	readonly entry: DirectoryEntry
-	readonly depth: number
-}
-
-/** Walk options */
-interface WalkOptions {
-	readonly maxDepth?: number
-	readonly includeFiles?: boolean
-	readonly includeDirectories?: boolean
-	readonly filter?: (entry: DirectoryEntry, depth: number) => boolean
-}
-
-/** Write operation data types */
 type WriteData =
 	| string
 	| BufferSource
 	| Blob
 	| ReadableStream<Uint8Array>
 
-/** Write options */
-interface WriteOptions {
-	readonly position?: number
-	readonly keepExistingData?: boolean
-}
+type StartInDirectory =
+	| 'desktop'
+	| 'documents'
+	| 'downloads'
+	| 'music'
+	| 'pictures'
+	| 'videos'
+	| FileSystemHandle
 
-/** Unsubscribe function type */
-type Unsubscribe = () => void
-```
-
----
-
-### Error Types
-
-```typescript
-/** Base error class */
-interface FileSystemError extends Error {
-	readonly code: FileSystemErrorCode
-	readonly path?: string
-	readonly cause?: Error
-}
-
-/** Error code type */
 type FileSystemErrorCode =
 	| 'NOT_FOUND'
 	| 'NOT_ALLOWED'
@@ -1720,26 +1852,26 @@ type FileSystemErrorCode =
 	| 'NOT_SUPPORTED'
 ```
 
----
-
 ### Comparison with Node.js fs Module
 
-| Node.js `fs`                       | Browser Wrapper                              | Notes                    |
-|------------------------------------|----------------------------------------------|--------------------------|
-| `fs.readFile()`                    | `file.getText()` / `file.getArrayBuffer()`   | Async only               |
-| `fs.writeFile()`                   | `file.write()`                               | Atomic by default        |
-| `fs.appendFile()`                  | `file.append()`                              |                          |
-| `fs.readdir()`                     | `directory.list()`                           | Returns entry objects    |
-| `fs.mkdir()`                       | `directory.createDirectory()`                |                          |
-| `fs.mkdir(p, { recursive: true })` | `directory.createPath()`                     |                          |
-| `fs.rm()`                          | `directory.removeFile/Directory()`           |                          |
-| `fs.stat()`                        | `file.getMetadata()`                         |                          |
-| `fs.existsSync()`                  | `directory.hasFile/Directory()`              | Always async             |
-| `fs.createReadStream()`            | `file.getStream()`                           |                          |
-| `fs.createWriteStream()`           | `file.openWritable()`                        |                          |
+| Node.js fs | @mikesaintsg/filesystem | Notes |
+|------------|-------------------------|-------|
+| `fs.readFile()` | `file.getText()` / `file.getArrayBuffer()` | Async only |
+| `fs.writeFile()` | `file.write()` | Atomic by default |
+| `fs.appendFile()` | `file.append()` | |
+| `fs.mkdir()` | `dir.createDirectory()` | |
+| `fs.mkdir({ recursive: true })` | `dir.createPath()` | |
+| `fs.readdir()` | `dir.list()` / `dir.entries()` | Async iterator available |
+| `fs.rm()` | `dir.removeFile()` / `dir.removeDirectory()` | |
+| `fs.stat()` | `file.getMetadata()` | |
+| `fs.existsSync()` | `dir.hasFile()` / `dir.hasDirectory()` | Async only |
+| `fs.createReadStream()` | `file.getStream()` | |
+| `fs.createWriteStream()` | `file.openWritable()` | |
+| `fs.copyFile()` | `dir.copyFile()` | |
+| `fs.rename()` | `dir.moveFile()` | |
 
 ---
 
 ## License
 
-MIT © Mike Garcia
+MIT
