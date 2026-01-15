@@ -76,7 +76,7 @@ export interface WriteOptions {
 
 /** Remove directory options */
 export interface RemoveDirectoryOptions {
-	readonly recursive?: boolean
+	readonly recursive?:  boolean
 }
 
 // ============================================================================
@@ -86,7 +86,7 @@ export interface RemoveDirectoryOptions {
 /** Directory entry for adapter iteration (handle-agnostic) */
 export interface AdapterDirectoryEntry {
 	readonly name: string
-	readonly kind: EntryKind
+	readonly kind:  EntryKind
 }
 
 /** Internal representation of a file or directory entry for InMemoryAdapter */
@@ -94,9 +94,9 @@ export interface MemoryEntry {
 	path: string
 	name: string
 	parent: string
-	kind: 'file' | 'directory'
+	kind: EntryKind
 	content?: ArrayBuffer
-	lastModified?: number
+	lastModified?:  number
 }
 
 /** Exported file entry for migration */
@@ -104,7 +104,7 @@ export interface ExportedFileEntry {
 	readonly path: string
 	readonly name: string
 	readonly kind: 'file'
-	readonly content: ArrayBuffer
+	readonly content:  ArrayBuffer
 	readonly lastModified: number
 }
 
@@ -112,7 +112,7 @@ export interface ExportedFileEntry {
 export interface ExportedDirectoryEntry {
 	readonly path: string
 	readonly name: string
-	readonly kind: 'directory'
+	readonly kind:  'directory'
 }
 
 /** Exported entry union type */
@@ -149,77 +149,79 @@ export interface MoveOptions {
 
 /**
  * Storage adapter interface for pluggable backends.
+ *
  * All adapters implement this exact contract with identical method signatures.
+ * OPFS is the primary adapter; others provide fallback or specialized behavior.
  */
 export interface StorageAdapterInterface {
-	/** Checks if this adapter is available in the current environment. */
+	/** Checks if this adapter is available in the current environment */
 	isAvailable(): Promise<boolean>
 
-	/** Initializes the adapter. */
+	/** Initializes the adapter */
 	init(): Promise<void>
 
-	/** Closes the adapter and releases resources. */
+	/** Closes the adapter and releases resources */
 	close(): void
 
 	// ---- File Operations ----
 
-	/** Reads file content as text. */
+	/** Reads file content as text */
 	getFileText(path: string): Promise<string>
 
-	/** Reads file content as ArrayBuffer. */
+	/** Reads file content as ArrayBuffer */
 	getFileArrayBuffer(path: string): Promise<ArrayBuffer>
 
-	/** Reads file content as Blob. */
+	/** Reads file content as Blob */
 	getFileBlob(path: string): Promise<Blob>
 
-	/** Gets file metadata. */
+	/** Gets file metadata */
 	getFileMetadata(path: string): Promise<FileMetadata>
 
-	/** Writes data to a file. */
+	/** Writes data to a file */
 	writeFile(path: string, data: WriteData, options?: WriteOptions): Promise<void>
 
-	/** Appends data to a file. */
+	/** Appends data to a file */
 	appendFile(path: string, data: WriteData): Promise<void>
 
-	/** Truncates a file to specified size. */
+	/** Truncates a file to specified size */
 	truncateFile(path: string, size: number): Promise<void>
 
-	/** Checks if a file exists at the path. */
+	/** Checks if a file exists at the path */
 	hasFile(path: string): Promise<boolean>
 
-	/** Removes a file. */
+	/** Removes a file */
 	removeFile(path: string): Promise<void>
 
-	/** Copies a file from source to destination. */
-	copyFile(sourcePath: string, destinationPath: string, options?: CopyOptions): Promise<void>
+	/** Copies a file from source to destination */
+	copyFile(sourcePath: string, destinationPath:  string, options?: CopyOptions): Promise<void>
 
-	/** Moves a file from source to destination. */
-	moveFile(sourcePath: string, destinationPath: string, options?: MoveOptions): Promise<void>
+	/** Moves a file from source to destination */
+	moveFile(sourcePath:  string, destinationPath: string, options?: MoveOptions): Promise<void>
 
 	// ---- Directory Operations ----
 
-	/** Creates a directory at the path. */
-	createDirectory(path: string): Promise<void>
+	/** Creates a directory at the path */
+	createDirectory(path:  string): Promise<void>
 
-	/** Checks if a directory exists at the path. */
+	/** Checks if a directory exists at the path */
 	hasDirectory(path: string): Promise<boolean>
 
-	/** Removes a directory. */
+	/** Removes a directory */
 	removeDirectory(path: string, options?: RemoveDirectoryOptions): Promise<void>
 
-	/** Lists entries in a directory. */
+	/** Lists entries in a directory */
 	listEntries(path: string): Promise<readonly AdapterDirectoryEntry[]>
 
 	// ---- Quota & Migration ----
 
-	/** Gets storage quota information. */
+	/** Gets storage quota information */
 	getQuota(): Promise<StorageQuota>
 
-	/** Exports the file system to a portable format. */
-	export(options?: ExportOptions): Promise<ExportedFileSystem>
+	/** Exports the file system to a portable format */
+	export(options?:  ExportOptions): Promise<ExportedFileSystem>
 
-	/** Imports a file system from exported data. */
-	import(data: ExportedFileSystem, options?: ImportOptions): Promise<void>
+	/** Imports a file system from exported data */
+	import(data:  ExportedFileSystem, options?:  ImportOptions): Promise<void>
 }
 
 /** Options for creating a file system */
@@ -233,8 +235,8 @@ export interface FileSystemOptions {
 
 /** File type filter for pickers */
 export interface FilePickerAcceptType {
-	readonly description?: string
-	readonly accept: Record<string, readonly string[]>
+	readonly description?:  string
+	readonly accept:  Readonly<Record<string, readonly string[]>>
 }
 
 /** Start-in directory options for pickers */
@@ -251,9 +253,9 @@ export type StartInDirectory =
 export interface OpenFilePickerOptions {
 	readonly multiple?: boolean
 	readonly excludeAcceptAllOption?: boolean
-	readonly types?: readonly FilePickerAcceptType[]
+	readonly types?:  readonly FilePickerAcceptType[]
 	readonly id?: string
-	readonly startIn?: StartInDirectory
+	readonly startIn?:  StartInDirectory
 }
 
 /** Save file picker options */
@@ -262,13 +264,13 @@ export interface SaveFilePickerOptions {
 	readonly excludeAcceptAllOption?: boolean
 	readonly types?: readonly FilePickerAcceptType[]
 	readonly id?: string
-	readonly startIn?: StartInDirectory
+	readonly startIn?:  StartInDirectory
 }
 
 /** Directory picker options */
 export interface DirectoryPickerOptions {
 	readonly id?: string
-	readonly startIn?: StartInDirectory
+	readonly startIn?:  StartInDirectory
 	readonly mode?: 'read' | 'readwrite'
 }
 
@@ -292,7 +294,7 @@ export type FileSystemErrorCode =
 /** Base file system error interface */
 export interface FileSystemErrorData {
 	readonly code: FileSystemErrorCode
-	readonly path?: string
+	readonly path?:  string
 	readonly cause?: Error
 }
 
@@ -301,10 +303,10 @@ export interface FileSystemErrorData {
 // ============================================================================
 
 /**
- * File interface - wraps FileSystemFileHandle
+ * File interface - wraps FileSystemFileHandle.
  *
  * Provides type-safe, Promise-based access to file operations
- * with full read/write capabilities.
+ * with full read/write capabilities. 
  */
 export interface FileInterface {
 	/** Native file handle for escape hatch access */
@@ -335,20 +337,20 @@ export interface FileInterface {
 	// ---- Writing ----
 
 	/**
-	 * Writes data to the file (atomic operation)
+	 * Writes data to the file (atomic operation).
 	 * @param data - Data to write
 	 * @param options - Write options
 	 */
-	write(data: WriteData, options?: WriteOptions): Promise<void>
+	write(data: WriteData, options?:  WriteOptions): Promise<void>
 
 	/**
-	 * Appends data to the end of the file
+	 * Appends data to the end of the file. 
 	 * @param data - Data to append
 	 */
 	append(data: WriteData): Promise<void>
 
 	/**
-	 * Truncates the file to specified size
+	 * Truncates the file to specified size.
 	 * @param size - New file size in bytes
 	 */
 	truncate(size: number): Promise<void>
@@ -372,14 +374,14 @@ export interface FileInterface {
 	// ---- Comparison ----
 
 	/**
-	 * Checks if this file is the same as another entry
+	 * Checks if this file is the same as another entry.
 	 * @param other - Entry to compare against
 	 */
 	isSameEntry(other: FileInterface | DirectoryInterface): Promise<boolean>
 }
 
 /**
- * Directory interface - wraps FileSystemDirectoryHandle
+ * Directory interface - wraps FileSystemDirectoryHandle.
  *
  * Provides type-safe access to directory operations including
  * file/directory creation, iteration, and path-based operations.
@@ -396,94 +398,102 @@ export interface DirectoryInterface {
 	// ---- File Operations ----
 
 	/**
-	 * Gets a file by name (returns undefined if not found)
+	 * Gets a file by name (returns undefined if not found).
 	 * @param name - File name
 	 */
 	getFile(name: string): Promise<FileInterface | undefined>
 
 	/**
-	 * Gets a file by name (throws NotFoundError if not found)
+	 * Gets a file by name (throws NotFoundError if not found).
 	 * @param name - File name
 	 */
 	resolveFile(name: string): Promise<FileInterface>
 
 	/**
-	 * Creates a file (overwrites if exists)
+	 * Creates a file (overwrites if exists).
 	 * @param name - File name
 	 */
 	createFile(name: string): Promise<FileInterface>
 
 	/**
-	 * Checks if a file exists
+	 * Checks if a file exists.
 	 * @param name - File name
 	 */
 	hasFile(name: string): Promise<boolean>
 
 	/**
-	 * Removes a file
+	 * Removes a file.
 	 * @param name - File name
 	 */
-	removeFile(name: string): Promise<void>
+	removeFile(name:  string): Promise<void>
 
 	/**
-	 * Copies a file to a destination
+	 * Copies a file to a destination.
 	 * @param source - Source file name
 	 * @param destination - Destination file name or directory
 	 * @param options - Copy options
 	 */
-	copyFile(source: string, destination: string | DirectoryInterface, options?: CopyOptions): Promise<FileInterface>
+	copyFile(
+		source: string,
+		destination: string | DirectoryInterface,
+		options?: CopyOptions
+	): Promise<FileInterface>
 
 	/**
-	 * Moves a file to a destination
+	 * Moves a file to a destination.
 	 * @param source - Source file name
 	 * @param destination - Destination file name or directory
 	 * @param options - Move options
 	 */
-	moveFile(source: string, destination: string | DirectoryInterface, options?: MoveOptions): Promise<FileInterface>
+	moveFile(
+		source: string,
+		destination: string | DirectoryInterface,
+		options?: MoveOptions
+	): Promise<FileInterface>
 
 	// ---- Directory Operations ----
 
 	/**
-	 * Gets a subdirectory by name (returns undefined if not found)
+	 * Gets a subdirectory by name (returns undefined if not found).
 	 * @param name - Directory name
 	 */
 	getDirectory(name: string): Promise<DirectoryInterface | undefined>
 
 	/**
-	 * Gets a subdirectory by name (throws NotFoundError if not found)
+	 * Gets a subdirectory by name (throws NotFoundError if not found).
 	 * @param name - Directory name
 	 */
 	resolveDirectory(name: string): Promise<DirectoryInterface>
 
 	/**
-	 * Creates a subdirectory (creates if not exists)
+	 * Creates a subdirectory (creates if not exists).
 	 * @param name - Directory name
 	 */
 	createDirectory(name: string): Promise<DirectoryInterface>
 
 	/**
-	 * Checks if a subdirectory exists
+	 * Checks if a subdirectory exists.
 	 * @param name - Directory name
 	 */
 	hasDirectory(name: string): Promise<boolean>
 
 	/**
-	 * Removes a subdirectory
+	 * Removes a subdirectory.
 	 * @param name - Directory name
 	 * @param options - Removal options
 	 */
-	removeDirectory(name: string, options?: RemoveDirectoryOptions): Promise<void>
+	removeDirectory(name: string, options?:  RemoveDirectoryOptions): Promise<void>
 
 	// ---- Path Operations ----
 
 	/**
-	 * Resolves a path to a file or directory
+	 * Resolves a path to a file or directory.
 	 * @param segments - Path segments
 	 */
 	resolvePath(...segments: readonly string[]): Promise<FileInterface | DirectoryInterface | undefined>
 
 	/**
-	 * Creates nested directories (like mkdir -p)
+	 * Creates nested directories (like mkdir -p).
 	 * @param segments - Path segments
 	 */
 	createPath(...segments: readonly string[]): Promise<DirectoryInterface>
@@ -509,10 +519,10 @@ export interface DirectoryInterface {
 	listDirectories(): Promise<readonly DirectoryInterface[]>
 
 	/**
-	 * Recursively walks directory tree
+	 * Recursively walks directory tree.
 	 * @param options - Walk options
 	 */
-	walk(options?: WalkOptions): AsyncIterable<WalkEntry>
+	walk(options?:  WalkOptions): AsyncIterable<WalkEntry>
 
 	// ---- Permissions ----
 
@@ -528,13 +538,13 @@ export interface DirectoryInterface {
 	// ---- Comparison ----
 
 	/**
-	 * Checks if this directory is the same as another entry
+	 * Checks if this directory is the same as another entry.
 	 * @param other - Entry to compare against
 	 */
 	isSameEntry(other: FileInterface | DirectoryInterface): Promise<boolean>
 
 	/**
-	 * Gets relative path from this directory to a descendant entry
+	 * Gets relative path from this directory to a descendant entry.
 	 * @param descendant - Descendant entry
 	 * @returns Path segments or null if not a descendant
 	 */
@@ -542,28 +552,28 @@ export interface DirectoryInterface {
 }
 
 /**
- * Writable file interface - wraps FileSystemWritableFileStream
+ * Writable file interface - wraps FileSystemWritableFileStream.
  *
- * Provides streaming write access to files with seek and truncate.
+ * Provides streaming write access to files with seek and truncate. 
  */
 export interface WritableFileInterface {
 	/** Native writable stream for escape hatch access */
 	readonly native: FileSystemWritableFileStream
 
 	/**
-	 * Writes data at current position
+	 * Writes data at current position.
 	 * @param data - Data to write
 	 */
 	write(data: WriteData): Promise<void>
 
 	/**
-	 * Moves cursor to byte position
+	 * Moves cursor to byte position.
 	 * @param position - Byte position
 	 */
 	seek(position: number): Promise<void>
 
 	/**
-	 * Resizes file to specified bytes
+	 * Resizes file to specified bytes.
 	 * @param size - New file size
 	 */
 	truncate(size: number): Promise<void>
@@ -576,7 +586,7 @@ export interface WritableFileInterface {
 }
 
 /**
- * Sync access handle interface - wraps FileSystemSyncAccessHandle
+ * Sync access handle interface - wraps FileSystemSyncAccessHandle.
  *
  * Provides synchronous file access for high-performance operations
  * in Web Workers only.
@@ -589,23 +599,23 @@ export interface SyncAccessHandleInterface {
 	getSize(): number
 
 	/**
-	 * Reads bytes into buffer
+	 * Reads bytes into buffer.
 	 * @param buffer - Buffer to read into
 	 * @param options - Read options
 	 * @returns Number of bytes read
 	 */
-	read(buffer: ArrayBufferView, options?: { at?: number }): number
+	read(buffer:  ArrayBufferView, options?: { readonly at?: number }): number
 
 	/**
-	 * Writes buffer to file
+	 * Writes buffer to file.
 	 * @param buffer - Buffer to write
 	 * @param options - Write options
 	 * @returns Number of bytes written
 	 */
-	write(buffer: ArrayBufferView, options?: { at?: number }): number
+	write(buffer:  ArrayBufferView, options?: { readonly at?: number }): number
 
 	/**
-	 * Resizes file to new size
+	 * Resizes file to new size.
 	 * @param newSize - New file size
 	 */
 	truncate(newSize: number): void
@@ -618,10 +628,10 @@ export interface SyncAccessHandleInterface {
 }
 
 /**
- * Main file system interface
+ * Main file system interface. 
  *
- * Entry point for all file system operations. Provides access to
- * OPFS, file pickers (Chromium), drag-drop integration, and File API.
+ * Entry point for all file system operations.  Provides access to
+ * OPFS (primary), file pickers (Chromium), drag-drop integration, and File API.
  */
 export interface FileSystemInterface {
 	// ---- OPFS Access ----
@@ -637,22 +647,25 @@ export interface FileSystemInterface {
 	/** Checks if file picker dialogs are supported (Chromium only) */
 	isUserAccessSupported(): boolean
 
+	/** Checks if OPFS is available */
+	isOPFSSupported(): boolean
+
 	// ---- File Pickers (Chromium Only) ----
 
 	/**
-	 * Opens file picker dialog
+	 * Opens file picker dialog. 
 	 * @param options - Picker options
 	 */
 	showOpenFilePicker(options?: OpenFilePickerOptions): Promise<readonly FileInterface[]>
 
 	/**
-	 * Opens save file picker dialog
+	 * Opens save file picker dialog.
 	 * @param options - Picker options
 	 */
 	showSaveFilePicker(options?: SaveFilePickerOptions): Promise<FileInterface>
 
 	/**
-	 * Opens directory picker dialog
+	 * Opens directory picker dialog.
 	 * @param options - Picker options
 	 */
 	showDirectoryPicker(options?: DirectoryPickerOptions): Promise<DirectoryInterface>
@@ -660,39 +673,41 @@ export interface FileSystemInterface {
 	// ---- Source Adapters ----
 
 	/**
-	 * Converts a DataTransferItem to file or directory interface
+	 * Converts a DataTransferItem to file or directory interface.
 	 * @param item - DataTransferItem from drag-drop event
 	 */
 	fromDataTransferItem(item: DataTransferItem): Promise<FileInterface | DirectoryInterface | null>
 
 	/**
-	 * Converts DataTransferItemList to array of file/directory interfaces
+	 * Converts DataTransferItemList to array of file/directory interfaces.
 	 * @param items - DataTransferItemList from drag-drop event
 	 */
-	fromDataTransferItems(items: DataTransferItemList): Promise<readonly (FileInterface | DirectoryInterface)[]>
+	fromDataTransferItems(
+		items: DataTransferItemList
+	): Promise<readonly (FileInterface | DirectoryInterface)[]>
 
 	/**
-	 * Wraps a File API object
+	 * Wraps a File API object.
 	 * @param file - File from input element
 	 */
 	fromFile(file: File): Promise<FileInterface>
 
 	/**
-	 * Wraps a FileList
+	 * Wraps a FileList. 
 	 * @param files - FileList from input element
 	 */
-	fromFiles(files: FileList): Promise<readonly FileInterface[]>
+	fromFiles(files:  FileList): Promise<readonly FileInterface[]>
 
 	// ---- Migration ----
 
 	/**
-	 * Exports the file system to a portable format
+	 * Exports the file system to a portable format. 
 	 * @param options - Export options
 	 */
 	export(options?: ExportOptions): Promise<ExportedFileSystem>
 
 	/**
-	 * Imports a file system from exported data
+	 * Imports a file system from exported data. 
 	 * @param data - Exported file system data
 	 * @param options - Import options
 	 */
