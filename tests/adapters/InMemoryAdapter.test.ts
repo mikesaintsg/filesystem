@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { InMemoryAdapter } from '~/src/adapters/InMemoryAdapter.js'
-import { NotFoundError, TypeMismatchError } from '~/src/errors.js'
+import { InMemoryAdapter } from '@mikesaintsg/filesystem'
+import { NotFoundError, TypeMismatchError } from '@mikesaintsg/filesystem'
 
 describe('InMemoryAdapter', () => {
 	let adapter: InMemoryAdapter

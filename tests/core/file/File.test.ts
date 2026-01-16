@@ -6,9 +6,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { fromDirectoryHandle } from '~/src/factories.js'
+import { fromDirectoryHandle } from '@mikesaintsg/filesystem'
 import { getTestRoot, uniqueTestDir } from '../../setup.js'
-import type { DirectoryInterface } from '~/src/types.js'
+import type { DirectoryInterface } from '@mikesaintsg/filesystem'
 
 describe('File', () => {
 	let root: DirectoryInterface

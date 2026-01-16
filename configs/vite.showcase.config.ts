@@ -13,7 +13,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
-			'~/src': resolve(__dirname, '../src'),
+			'@mikesaintsg/filesystem': resolve(__dirname, '../src', 'index.ts'),
 		},
 	},
 })

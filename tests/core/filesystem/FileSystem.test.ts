@@ -6,10 +6,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createFileSystem } from '~/src/factories.js'
+import { createFileSystem } from '@mikesaintsg/filesystem'
 import { getTestRoot, uniqueTestDir, createTestFile } from '../../setup.js'
-import type { FileSystemInterface, DirectoryInterface } from '~/src/types.js'
-import { NotSupportedError } from '~/src/errors.js'
+import type { FileSystemInterface, DirectoryInterface } from '@mikesaintsg/filesystem'
+import { NotSupportedError } from '@mikesaintsg/filesystem'
 
 describe('FileSystem', () => {
 	let fs: FileSystemInterface

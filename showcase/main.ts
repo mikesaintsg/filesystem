@@ -31,8 +31,8 @@ import {
 	NotFoundError,
 	ERROR_MESSAGES,
 	InMemoryAdapter,
-} from '~/src/index.js'
-import type { FileSystemInterface, DirectoryInterface, FileInterface } from '~/src/types.js'
+} from '@mikesaintsg/filesystem'
+import type { FileSystemInterface, DirectoryInterface, FileInterface } from '@mikesaintsg/filesystem'
 
 // ============================================================================
 // App State

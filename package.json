@@ -55,7 +55,7 @@
 		"clean:showcase": "node -e \"try{require('fs').rmSync('dist/showcase',{recursive:true,force:true})}catch(e){}\"",
 		"copy:showcase": "node -e \"try{require('fs').cpSync('dist/showcase/index.html','showcase.html',{force:true});console.log('Created: showcase.html')}catch(e){throw e}\"",
 		"decache": "node -e \"const fs=require('fs');['.eslintcache','node_modules/.vite','node_modules/.vitest','node_modules/.cache'].forEach(p=>{try{fs.rmSync(p,{recursive:true,force:true})}catch{}})\"",
-		"prepublishOnly": "npm run test && npm run build"
+		"prepublishOnly": "npm run test && npm run check && npm run format && npm run build"
 	},
 	"devDependencies": {
 		"@types/node": "^25.0.9",

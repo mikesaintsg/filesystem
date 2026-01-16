@@ -18,14 +18,14 @@ import {
 	formatBytes,
 	isOPFSSupported,
 	isFilePickerSupported,
-} from '~/src/helpers.js'
+} from '@mikesaintsg/filesystem'
 import {
 	FileSystemError,
 	NotFoundError,
 	NotAllowedError,
 	AbortError,
-} from '~/src/errors.js'
-import type { DirectoryEntry } from '~/src/types.js'
+} from '@mikesaintsg/filesystem'
+import type { DirectoryEntry } from '@mikesaintsg/filesystem'
 
 describe('helpers', () => {
 	describe('error type guards', () => {
